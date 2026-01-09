@@ -4,8 +4,8 @@ Usage: .\scripts\migrate.ps1 -cmd up -db "postgres://user:pass@host:5432/db?sslm
 #>
 
 param(
-    [Parameter(Mandatory=$true)] [string] $cmd,
-    [Parameter(Mandatory=$true)] [string] $db,
+    [Parameter(Mandatory = $true)] [string] $cmd,
+    [Parameter(Mandatory = $true)] [string] $db,
     [int] $version
 )
 

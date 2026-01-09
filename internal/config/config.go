@@ -7,10 +7,10 @@ import (
 
 // Config holds runtime configuration read from environment variables.
 type Config struct {
-	Port      string // e.g. ":3000" or "3000"
-	DataStore string // "memory" or "postgres"
+	Port        string // e.g. ":3000" or "3000"
+	DataStore   string // "memory" or "postgres"
 	DatabaseURL string
-	JWTSecret string
+	JWTSecret   string
 }
 
 // Load loads configuration from environment variables with sensible defaults.

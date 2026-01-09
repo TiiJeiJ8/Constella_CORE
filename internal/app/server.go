@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -9,7 +10,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/Constella_CORE/constella-server/internal/logging"
 )
 
 type Server struct {
@@ -33,7 +33,7 @@ func (s *Server) Run(addr string) error {
 	// start server
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logging.L().Fatalw("server run failed", "error", err)
+			log.Fatalf("server run failed: %v", err)
 		}
 	}()
 
@@ -41,13 +41,13 @@ func (s *Server) Run(addr string) error {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
-	logging.L().Infow("Shutting down server")
+	log.Println("Shutting down server...")
 
 	// shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := srv.Shutdown(ctx); err != nil {
-		logging.L().Errorw("Server forced to shutdown", "error", err)
+		log.Printf("Server forced to shutdown: %v", err)
 	}
 
 	// run cleanup
@@ -55,6 +55,6 @@ func (s *Server) Run(addr string) error {
 		s.cleanup()
 	}
 
-	logging.L().Infow("Server exiting")
+	log.Println("Server exiting")
 	return nil
 }
