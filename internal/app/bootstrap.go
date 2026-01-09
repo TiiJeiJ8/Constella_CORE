@@ -1,13 +1,22 @@
 package app
 
 import (
+	"database/sql"
+	"log"
+	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	udomain "github.com/Constella_CORE/constella-server/internal/domain/user"
 	mem "github.com/Constella_CORE/constella-server/internal/infrastructure/persistence/memory"
+	pg "github.com/Constella_CORE/constella-server/internal/infrastructure/persistence/postgres"
 	httpHandler "github.com/Constella_CORE/constella-server/internal/interface/http/handler"
 	httpMiddleware "github.com/Constella_CORE/constella-server/internal/interface/http/middleware"
+
+	// Use pgx stdlib adapter as the preferred Postgres driver.
+	// Ensure you run: `go get github.com/jackc/pgx/v5/stdlib` and `go mod tidy` locally.
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 // SetupEngine wires minimal in-memory repositories and HTTP handlers.
@@ -20,12 +29,42 @@ func SetupEngine() *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok", "time": time.Now().UTC()})
 	})
 
-	// create in-memory user repo
-	userRepo := mem.NewUserRepo()
+	// choose datastore by env
+	datastore := os.Getenv("DATASTORE") // "memory" (default) or "postgres"
 
-	// auth handlers with a simple secret (for local testing)
-	// In real deployments, load secret from config/env
-	jwtSecret := "dev-secret-change-me"
+	// auth handlers with secret from environment (fallback to dev secret)
+	jwtSecret := os.Getenv("CONSTELLA_JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "dev-secret-change-me"
+		log.Println("WARNING: using dev jwt secret; set CONSTELLA_JWT_SECRET in production")
+	}
+
+	var userRepo udomain.Repository
+
+	if datastore == "postgres" {
+		dbURL := os.Getenv("DATABASE_URL")
+		if dbURL == "" {
+			log.Println("DATASTORE=postgres set but DATABASE_URL is empty; falling back to memory repo")
+			userRepo = mem.NewUserRepo()
+		} else {
+			db, err := sql.Open("postgres", dbURL)
+			if err != nil {
+				log.Printf("failed to open postgres: %v; falling back to memory repo", err)
+				userRepo = mem.NewUserRepo()
+			} else {
+				if err := db.Ping(); err != nil {
+					log.Printf("failed to ping postgres: %v; falling back to memory repo", err)
+					userRepo = mem.NewUserRepo()
+				} else {
+					log.Println("Using Postgres datastore")
+					userRepo = pg.NewUserRepo(db)
+				}
+			}
+		}
+	} else {
+		userRepo = mem.NewUserRepo()
+	}
+
 	authH := httpHandler.NewAuthHandler(userRepo, jwtSecret)
 
 	api := r.Group("/api/v1")
