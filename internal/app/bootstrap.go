@@ -2,11 +2,13 @@ package app
 
 import (
 	"database/sql"
-	"log"
 	"os"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	config "github.com/Constella_CORE/constella-server/internal/config"
+	"github.com/Constella_CORE/constella-server/internal/logging"
 
 	udomain "github.com/Constella_CORE/constella-server/internal/domain/user"
 	mem "github.com/Constella_CORE/constella-server/internal/infrastructure/persistence/memory"
@@ -20,8 +22,8 @@ import (
 )
 
 // SetupEngine wires minimal in-memory repositories and HTTP handlers.
-// It returns a configured *gin.Engine ready to Run().
-func SetupEngine() *gin.Engine {
+// It returns a configured *gin.Engine ready to Run() and a cleanup func to close resources.
+func SetupEngine() (*gin.Engine, func()) {
 	r := gin.Default()
 
 	// health
@@ -29,35 +31,41 @@ func SetupEngine() *gin.Engine {
 		c.JSON(200, gin.H{"status": "ok", "time": time.Now().UTC()})
 	})
 
-	// choose datastore by env
-	datastore := os.Getenv("DATASTORE") // "memory" (default) or "postgres"
+	// load configuration
+	cfg := config.Load()
 
-	// auth handlers with secret from environment (fallback to dev secret)
-	jwtSecret := os.Getenv("CONSTELLA_JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "dev-secret-change-me"
-		log.Println("WARNING: using dev jwt secret; set CONSTELLA_JWT_SECRET in production")
+	// choose datastore by config
+	datastore := cfg.DataStore // "memory" (default) or "postgres"
+	jwtSecret := cfg.JWTSecret
+	if jwtSecret == "dev-secret-change-me" {
+		logging.L().Warnw("using dev jwt secret; set CONSTELLA_JWT_SECRET in production")
 	}
 
 	var userRepo udomain.Repository
+	var dbConn *sql.DB
+	cleanup := func() {}
 
 	if datastore == "postgres" {
 		dbURL := os.Getenv("DATABASE_URL")
 		if dbURL == "" {
-			log.Println("DATASTORE=postgres set but DATABASE_URL is empty; falling back to memory repo")
+			logging.L().Warn("DATASTORE=postgres set but DATABASE_URL is empty; falling back to memory repo")
 			userRepo = mem.NewUserRepo()
 		} else {
 			db, err := sql.Open("postgres", dbURL)
 			if err != nil {
-				log.Printf("failed to open postgres: %v; falling back to memory repo", err)
+				logging.L().Errorw("failed to open postgres; falling back to memory repo", "error", err)
 				userRepo = mem.NewUserRepo()
 			} else {
 				if err := db.Ping(); err != nil {
-					log.Printf("failed to ping postgres: %v; falling back to memory repo", err)
+					logging.L().Errorw("failed to ping postgres; falling back to memory repo", "error", err)
 					userRepo = mem.NewUserRepo()
 				} else {
-					log.Println("Using Postgres datastore")
+					logging.L().Infow("Using Postgres datastore")
 					userRepo = pg.NewUserRepo(db)
+					dbConn = db
+					cleanup = func() {
+						_ = dbConn.Close()
+					}
 				}
 			}
 		}
@@ -87,5 +95,6 @@ func SetupEngine() *gin.Engine {
 		})
 	}
 
-	return r
+	// return engine and cleanup func
+	return r, cleanup
 }

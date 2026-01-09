@@ -9,7 +9,8 @@ import (
 )
 
 func TestRegisterLoginAndMe(t *testing.T) {
-	r := SetupEngine()
+	r, cleanup := SetupEngine()
+	defer cleanup()
 
 	// Register
 	regBody := `{"username":"testuser","email":"test@example.com","password":"secret123"}`
