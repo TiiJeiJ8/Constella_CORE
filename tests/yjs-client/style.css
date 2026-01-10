@@ -141,6 +141,36 @@ button:disabled {
     margin-top: 20px;
 }
 
+.editor-wrapper {
+    position: relative;
+}
+
+.cursors-layer {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    bottom: 15px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.remote-cursor {
+    position: absolute;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.3; }
+}
+
+.cursor-label {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    animation: none;
+    opacity: 1 !important;
+}
+
 textarea {
     width: 100%;
     min-height: 200px;
@@ -151,6 +181,8 @@ textarea {
     font-family: 'Courier New', monospace;
     resize: vertical;
     transition: border-color 0.3s;
+    line-height: 20px;
+    letter-spacing: 0.5px;
 }
 
 textarea:focus {

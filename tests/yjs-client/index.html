@@ -32,6 +32,10 @@
                 <div class="status-label">在线用户</div>
                 <div class="status-value" id="userCount">0</div>
             </div>
+            <div class="status-item">
+                <div class="status-label">当前用户 ID</div>
+                <div class="status-value" id="currentUserId">-</div>
+            </div>
         </div>
 
         <div class="controls">
@@ -47,11 +51,14 @@
 
         <div class="editor-container">
             <h3>📝 协作编辑器</h3>
-            <textarea 
-                id="editor" 
-                placeholder="连接到房间后开始输入..." 
-                disabled
-            ></textarea>
+            <div class="editor-wrapper">
+                <div id="cursors" class="cursors-layer"></div>
+                <textarea 
+                    id="editor" 
+                    placeholder="连接到房间后开始输入..." 
+                    disabled
+                ></textarea>
+            </div>
         </div>
 
         <div class="log-container">
