@@ -1,0 +1,18 @@
+{
+    "name": "constella-yjs-client",
+    "version": "1.0.0",
+    "description": "YJS 实时协作测试客户端",
+    "type": "module",
+    "scripts": {
+        "dev": "vite --host 0.0.0.0",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "yjs": "^13.6.10",
+        "y-websocket": "^2.0.2"
+    },
+    "devDependencies": {
+        "vite": "^5.0.0"
+    }
+}

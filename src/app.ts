@@ -11,8 +11,27 @@ import routes from './routes';
 
 const app: Application = express();
 
-// Security middleware
-app.use(helmet());
+// Security middleware with CSP configuration
+app.use(
+    helmet({
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: [
+                    "'self'",
+                    "'unsafe-inline'", // 允许内联脚本（用于测试页面）
+                ],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", 'data:', 'https:'],
+                connectSrc: ["'self'", 'ws:', 'wss:'], // 允许 WebSocket 连接
+                fontSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                mediaSrc: ["'self'"],
+                frameSrc: ["'none'"],
+            },
+        },
+    })
+);
 app.use(cors({ origin: config.corsOrigin }));
 
 // Request parsing

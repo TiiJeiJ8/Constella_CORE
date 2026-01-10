@@ -111,6 +111,18 @@ export class LevelDBPersistence implements IPersistence {
             // 读取元数据
             const metaKey = this.getMetaKey(docName);
             const metaBuffer = await this.db.get(metaKey);
+            
+            // 检查是否存在数据
+            if (!metaBuffer) {
+                // 文档不存在，创建新的
+                await this.db.put(
+                    metaKey,
+                    Buffer.from(JSON.stringify({ updateCount: 0 }))
+                );
+                logger.info(`Created new Y.Doc in LevelDB: ${docName}`);
+                return doc;
+            }
+            
             const meta = JSON.parse(Buffer.from(metaBuffer).toString());
 
             // 应用所有更新

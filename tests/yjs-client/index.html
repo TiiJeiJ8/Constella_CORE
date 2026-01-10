@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Constella YJS 测试页面</title>
+    <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🌟 Constella YJS 测试</h1>
+        <p class="subtitle">实时协作文档同步测试页面</p>
+
+        <div class="info-box">
+            <h3>📋 使用说明</h3>
+            <p>1. 输入房间 ID（或使用默认的 test-room）</p>
+            <p>2. 点击"连接到房间"按钮</p>
+            <p>3. 在文本框中输入内容，将实时同步到其他客户端</p>
+            <p>4. 在多个浏览器窗口打开此页面测试实时协作</p>
+        </div>
+
+        <div class="status">
+            <div class="status-item">
+                <div class="status-label">连接状态</div>
+                <div class="status-value disconnected" id="connectionStatus">未连接</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">房间 ID</div>
+                <div class="status-value" id="roomIdDisplay">-</div>
+            </div>
+            <div class="status-item">
+                <div class="status-label">在线用户</div>
+                <div class="status-value" id="userCount">0</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <input 
+                type="text" 
+                id="roomInput" 
+                placeholder="输入房间 ID (默认: test-room)" 
+                value="room:test-room"
+            />
+            <button id="connectBtn">连接到房间</button>
+            <button id="disconnectBtn" disabled>断开连接</button>
+        </div>
+
+        <div class="editor-container">
+            <h3>📝 协作编辑器</h3>
+            <textarea 
+                id="editor" 
+                placeholder="连接到房间后开始输入..." 
+                disabled
+            ></textarea>
+        </div>
+
+        <div class="log-container">
+            <h3>📊 日志</h3>
+            <div id="logContent"></div>
+        </div>
+    </div>
+
+    <script type="module" src="./main.js"></script>
+</body>
+</html>

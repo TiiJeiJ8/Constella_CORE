@@ -33,12 +33,33 @@ function extractToken(request: IncomingMessage): string | null {
 }
 
 /**
+ * 测试环境白名单房间（无需认证）
+ */
+const TEST_WHITELIST_ROOMS = ['room:test-room', 'room:demo-room'];
+
+/**
  * 验证 Relay Token
  * @param request - HTTP 请求对象
+ * @param roomId - 房间 ID（可选，用于白名单检查）
  * @returns 解析后的 payload 或 null（如果验证失败）
  */
-export function verifyRelayToken(request: IncomingMessage): RelayTokenPayload | null {
+export function verifyRelayToken(
+    request: IncomingMessage,
+    roomId?: string
+): RelayTokenPayload | null {
     try {
+        // 检查是否是测试环境的白名单房间
+        if (config.env === 'development' || config.env === 'test') {
+            if (roomId && TEST_WHITELIST_ROOMS.includes(roomId)) {
+                logger.info(`Allowing whitelisted test room: ${roomId}`);
+                return {
+                    room_id: roomId.split(':')[1],
+                    user_id: 'test-user',
+                    exp: Math.floor(Date.now() / 1000) + 3600,
+                };
+            }
+        }
+
         const token = extractToken(request);
 
         if (!token) {
@@ -81,7 +102,7 @@ export function verifyRelayToken(request: IncomingMessage): RelayTokenPayload | 
  */
 export function extractRoomId(url: string): string | null {
     // URL 格式: /ws/room:<room_id>
-    const match = url.match(/\/ws\/(room:[a-f0-9-]+)/);
+    const match = url.match(/\/ws\/(room:[a-z0-9-]+)/);
     return match ? match[1] : null;
 }
 

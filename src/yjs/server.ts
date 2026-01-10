@@ -12,6 +12,10 @@ import logger from '../config/logger';
 const wsReadyStateConnecting = 0;
 const wsReadyStateOpen = 1;
 
+// 消息类型常量
+const messageSync = 0;
+const messageAwareness = 1;
+
 /**
  * WebSocket 连接信息
  */
@@ -46,6 +50,11 @@ export class YjsWebSocketServer {
             noServer: true,
         });
 
+        // 设置二进制类型
+        this.wss.on('connection', (ws) => {
+            ws.binaryType = 'arraybuffer';
+        });
+
         // 设置 HTTP 服务器的 upgrade 处理
         this.server.on('upgrade', this.handleUpgrade.bind(this));
 
@@ -72,20 +81,20 @@ export class YjsWebSocketServer {
             return;
         }
 
-        // 验证 token
-        const tokenPayload = verifyRelayToken(request);
-        if (!tokenPayload) {
-            logger.warn('WebSocket upgrade rejected - invalid or missing token');
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-            return;
-        }
-
-        // 提取房间 ID
+        // 提取房间 ID（先提取，用于白名单检查）
         const roomId = extractRoomId(url);
         if (!roomId) {
             logger.warn('WebSocket upgrade rejected - invalid room ID format');
             socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+            socket.destroy();
+            return;
+        }
+
+        // 验证 token（传递 roomId 以支持测试白名单）
+        const tokenPayload = verifyRelayToken(request, roomId);
+        if (!tokenPayload) {
+            logger.warn('WebSocket upgrade rejected - invalid or missing token');
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
             socket.destroy();
             return;
         }
@@ -158,8 +167,8 @@ export class YjsWebSocketServer {
 
             // 广播更新到所有连接
             const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, syncProtocol.messageYjsSyncStep2);
-            encoding.writeVarUint8Array(encoder, update);
+            encoding.writeVarUint(encoder, messageSync);
+            syncProtocol.writeUpdate(encoder, update);
             const message = encoding.toUint8Array(encoder);
 
             wsDoc.conns.forEach((_, conn) => {
@@ -181,7 +190,7 @@ export class YjsWebSocketServer {
             }) => {
                 const changedClients = added.concat(updated).concat(removed);
                 const encoder = encoding.createEncoder();
-                encoding.writeVarUint(encoder, 1); // messageAwareness 常量值为 1
+                encoding.writeVarUint(encoder, messageAwareness);
                 encoding.writeVarUint8Array(
                     encoder,
                     awarenessProtocol.encodeAwarenessUpdate(awareness, changedClients)
@@ -217,8 +226,11 @@ export class YjsWebSocketServer {
         wsDoc.conns.set(conn, new Set());
 
         // 设置消息处理
-        conn.on('message', (message: Buffer) => {
-            this.handleMessage(conn, wsDoc, new Uint8Array(message));
+        conn.on('message', (message: Buffer | ArrayBuffer) => {
+            const uint8Array = message instanceof ArrayBuffer 
+                ? new Uint8Array(message)
+                : new Uint8Array(message);
+            this.handleMessage(conn, wsDoc, uint8Array);
         });
 
         // 设置关闭处理
@@ -234,7 +246,7 @@ export class YjsWebSocketServer {
         // 发送同步步骤 1
         {
             const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, syncProtocol.messageYjsSyncStep1);
+            encoding.writeVarUint(encoder, messageSync);
             syncProtocol.writeSyncStep1(encoder, wsDoc.doc);
             this.send(conn, encoding.toUint8Array(encoder));
         }
@@ -242,7 +254,7 @@ export class YjsWebSocketServer {
         // 如果存在 awareness 状态，发送给新连接
         if (wsDoc.awareness.getStates().size > 0) {
             const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, 1); // messageAwareness 常量值为 1
+            encoding.writeVarUint(encoder, messageAwareness);
             encoding.writeVarUint8Array(
                 encoder,
                 awarenessProtocol.encodeAwarenessUpdate(
@@ -261,35 +273,39 @@ export class YjsWebSocketServer {
      */
     private handleMessage(conn: WebSocket, wsDoc: WSSharedDoc, message: Uint8Array): void {
         try {
+            if (message.length === 0) {
+                logger.warn('Received empty message, ignoring');
+                return;
+            }
+
             const encoder = encoding.createEncoder();
             const decoder = decoding.createDecoder(message);
             const messageType = decoding.readVarUint(decoder);
 
             switch (messageType) {
-                case syncProtocol.messageYjsSyncStep1: {
-                    // 客户端请求同步
-                    encoding.writeVarUint(encoder, syncProtocol.messageYjsSyncStep2);
-                    syncProtocol.writeSyncStep2(
+                case messageSync: {
+                    // Sync protocol 消息
+                    encoding.writeVarUint(encoder, messageSync);
+                    syncProtocol.readSyncMessage(
+                        decoder,
                         encoder,
                         wsDoc.doc,
-                        decoding.readVarUint8Array(decoder)
+                        conn
                     );
-                    this.send(conn, encoding.toUint8Array(encoder));
+                    
+                    // 如果有响应，发送回客户端
+                    if (encoding.length(encoder) > 1) {
+                        this.send(conn, encoding.toUint8Array(encoder));
+                    }
                     break;
                 }
 
-                case syncProtocol.messageYjsSyncStep2: {
-                    // 应用客户端更新
-                    Y.applyUpdate(wsDoc.doc, decoding.readVarUint8Array(decoder));
-                    break;
-                }
-
-                case 1: {
-                    // messageAwareness 常量值为 1
-                    // 应用 awareness 更新
+                case messageAwareness: {
+                    // Awareness 消息
+                    const update = decoding.readVarUint8Array(decoder);
                     awarenessProtocol.applyAwarenessUpdate(
                         wsDoc.awareness,
-                        decoding.readVarUint8Array(decoder),
+                        update,
                         conn
                     );
                     break;
@@ -300,6 +316,7 @@ export class YjsWebSocketServer {
             }
         } catch (error) {
             logger.error('Error handling WebSocket message:', error);
+            // 不要让错误中断连接
         }
     }
 
