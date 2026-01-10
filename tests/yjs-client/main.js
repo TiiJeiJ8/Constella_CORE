@@ -32,6 +32,11 @@ function connectToRoom() {
     const wsUrl = `ws://${window.location.hostname}:3000/ws`;
 
     log('正在连接到房间: ' + roomId, 'info');
+    
+    // 立即更新按钮状态
+    document.getElementById('connectBtn').disabled = true;
+    document.getElementById('disconnectBtn').disabled = false;
+    document.getElementById('roomInput').disabled = true;
 
     try {
         // 生成用户ID和颜色
@@ -69,12 +74,14 @@ function connectToRoom() {
             if (connected) {
                 log('✅ 成功连接到房间: ' + roomId, 'success');
                 document.getElementById('editor').disabled = false;
-                document.getElementById('connectBtn').disabled = true;
-                document.getElementById('disconnectBtn').disabled = false;
-                document.getElementById('roomInput').disabled = true;
                 document.getElementById('roomIdDisplay').textContent = roomId;
             } else {
                 log('❌ 连接断开', 'error');
+                // 连接断开时重置按钮状态
+                document.getElementById('editor').disabled = true;
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+                document.getElementById('roomInput').disabled = false;
             }
         });
 
@@ -154,6 +161,11 @@ function connectToRoom() {
     } catch (error) {
         log('❌ 连接失败: ' + error.message, 'error');
         console.error(error);
+        
+        // 重置按钮状态，允许重试
+        document.getElementById('connectBtn').disabled = false;
+        document.getElementById('disconnectBtn').disabled = true;
+        document.getElementById('roomInput').disabled = false;
     }
 }
 
