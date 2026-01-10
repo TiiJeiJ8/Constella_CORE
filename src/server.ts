@@ -3,6 +3,7 @@ import { config } from './config';
 import logger from './config/logger';
 import { db } from './config/database';
 import { migrationManager } from './database/migrationManager';
+import { YjsWebSocketServer, createPersistence } from './yjs';
 
 const startServer = async () => {
     try {
@@ -25,12 +26,32 @@ const startServer = async () => {
             logger.info(`API available at: http://localhost:${config.port}${config.apiPrefix}`);
         });
 
+        // 初始化 YJS WebSocket 服务器
+        logger.info('Initializing YJS WebSocket server...');
+        const yjsPersistence = createPersistence(config.yjs.persistence.type, {
+            leveldbPath: config.yjs.persistence.leveldbPath,
+        });
+        const yjsServer = new YjsWebSocketServer(server, {
+            path: config.websocket.path,
+            pingInterval: config.websocket.pingInterval,
+            persistence: yjsPersistence,
+        });
+        logger.info(`YJS WebSocket server initialized at ${config.websocket.path}`);
+
         // Graceful shutdown
         const gracefulShutdown = async (signal: string) => {
             logger.info(`${signal} received, closing server gracefully`);
 
             server.close(async () => {
                 logger.info('Server closed');
+
+                // 关闭 YJS 服务器
+                try {
+                    await yjsServer.close();
+                    logger.info('YJS WebSocket server closed');
+                } catch (error) {
+                    logger.error('Error closing YJS server:', error);
+                }
 
                 // 关闭数据库连接
                 try {
