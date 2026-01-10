@@ -4,31 +4,127 @@
 ```json
 {
     "code": 状态码,
-    "message": "信息",
-    "data": {} || [] || "" || null
+    "message": "English message",
+    "data": "ERROR_CODE" || {} || [] || null
 }
 ```
 
-### 状态码
+### HTTP 状态码
 
 - 200 正常返回
-- 401 登录失效
+- 201 创建成功
+- 400 请求错误
+- 401 登录失效/未认证
 - 403 权限不足
 - 404 未找到
+- 409 冲突（如资源已存在）
 - 500 服务器错误
 
+### 错误码
+
+所有错误码详见 [ERROR_CODES.md](./ERROR_CODES.md)
+
+**认证相关错误码示例：**
+- `AUTH_MISSING_FIELDS` - 必填字段缺失
+- `AUTH_EMAIL_EXISTS` - 邮箱已被注册
+- `AUTH_USERNAME_EXISTS` - 用户名已被使用
+- `AUTH_INVALID_CREDENTIALS` - 登录凭证错误
+- `AUTH_INVALID_TOKEN` - 令牌无效
+- `AUTH_TOKEN_REVOKED` - 令牌已被撤销
+- `AUTH_TOKEN_EXPIRED` - 令牌已过期
+
+**前端多语言处理：**
+前端应根据 `data` 字段中的错误码进行多语言映射，不应直接显示 `message` 字段内容。
+
 ## 认证
-- POST /api/v1/auth/register
-  body: { "username", "email", "password" }
-  returns: { user, access_token, refresh_token }
+### POST /api/v1/auth/register
+注册新用户
 
-- POST /api/v1/auth/login
-  body: { "email", "password" }
-  returns: { access_token, refresh_token }
+**Request Body:**
+```json
+{
+    "username": "string",
+    "email": "string",
+    "password": "string"
+}
+```
 
-- POST /api/v1/auth/refresh
-  body: { "refresh_token" }
-  returns: { access_token }
+**Success Response (200):**
+```json
+{
+    "code": 200,
+    "message": "Registration successful",
+    "data": {
+        "user": {
+            "id": "uuid",
+            "username": "string",
+            "email": "string",
+            "created_at": "ISO8601"
+        },
+        "access_token": "string",
+        "refresh_token": "string"
+    }
+}
+```
+
+**Error Responses:**
+- 400 - Missing fields: `{ "code": 400, "message": "Required fields are missing", "data": "AUTH_MISSING_FIELDS" }`
+- 409 - Email exists: `{ "code": 409, "message": "Email already registered", "data": "AUTH_EMAIL_EXISTS" }`
+- 409 - Username exists: `{ "code": 409, "message": "Username already taken", "data": "AUTH_USERNAME_EXISTS" }`
+
+### POST /api/v1/auth/login
+用户登录
+
+**Request Body:**
+```json
+{
+    "email": "string",
+    "password": "string"
+}
+```
+
+**Success Response (200):**
+```json
+{
+    "code": 200,
+    "message": "Login successful",
+    "data": {
+        "access_token": "string",
+        "refresh_token": "string"
+    }
+}
+```
+
+**Error Responses:**
+- 400 - Missing fields: `{ "code": 400, "message": "Required fields are missing", "data": "AUTH_MISSING_FIELDS" }`
+- 401 - Invalid credentials: `{ "code": 401, "message": "Invalid email or password", "data": "AUTH_INVALID_CREDENTIALS" }`
+
+### POST /api/v1/auth/refresh
+刷新访问令牌
+
+**Request Body:**
+```json
+{
+    "refresh_token": "string"
+}
+```
+
+**Success Response (200):**
+```json
+{
+    "code": 200,
+    "message": "Token refresh successful",
+    "data": {
+        "access_token": "string"
+    }
+}
+```
+
+**Error Responses:**
+- 400 - Missing token: `{ "code": 400, "message": "Refresh token is required", "data": "AUTH_TOKEN_MISSING" }`
+- 401 - Invalid token: `{ "code": 401, "message": "Invalid refresh token", "data": "AUTH_INVALID_TOKEN" }`
+- 401 - Token revoked: `{ "code": 401, "message": "Refresh token has been revoked", "data": "AUTH_TOKEN_REVOKED" }`
+- 401 - Token expired: `{ "code": 401, "message": "Refresh token has expired", "data": "AUTH_TOKEN_EXPIRED" }`
 
 ## 用户
 - GET /api/v1/users/:id

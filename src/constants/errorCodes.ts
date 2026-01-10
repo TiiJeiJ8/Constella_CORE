@@ -1,0 +1,49 @@
+/**
+ * 错误码定义
+ * 前端应根据这些错误码进行多语言处理
+ */
+
+// 认证相关错误码
+export const AUTH_ERRORS = {
+    MISSING_FIELDS: 'AUTH_MISSING_FIELDS',
+    EMAIL_EXISTS: 'AUTH_EMAIL_EXISTS',
+    USERNAME_EXISTS: 'AUTH_USERNAME_EXISTS',
+    INVALID_CREDENTIALS: 'AUTH_INVALID_CREDENTIALS',
+    INVALID_TOKEN: 'AUTH_INVALID_TOKEN',
+    TOKEN_REVOKED: 'AUTH_TOKEN_REVOKED',
+    TOKEN_EXPIRED: 'AUTH_TOKEN_EXPIRED',
+    TOKEN_MISSING: 'AUTH_TOKEN_MISSING',
+} as const;
+
+// 通用错误码
+export const COMMON_ERRORS = {
+    INTERNAL_ERROR: 'INTERNAL_ERROR',
+    NOT_FOUND: 'NOT_FOUND',
+    UNAUTHORIZED: 'UNAUTHORIZED',
+    FORBIDDEN: 'FORBIDDEN',
+    BAD_REQUEST: 'BAD_REQUEST',
+} as const;
+
+// 用户相关错误码
+export const USER_ERRORS = {
+    NOT_FOUND: 'USER_NOT_FOUND',
+    ALREADY_EXISTS: 'USER_ALREADY_EXISTS',
+} as const;
+
+// 房间相关错误码
+export const ROOM_ERRORS = {
+    NOT_FOUND: 'ROOM_NOT_FOUND',
+    ACCESS_DENIED: 'ROOM_ACCESS_DENIED',
+    INVALID_PASSWORD: 'ROOM_INVALID_PASSWORD',
+    ALREADY_JOINED: 'ROOM_ALREADY_JOINED',
+} as const;
+
+// 导出所有错误码
+export const ERROR_CODES = {
+    ...AUTH_ERRORS,
+    ...COMMON_ERRORS,
+    ...USER_ERRORS,
+    ...ROOM_ERRORS,
+} as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
