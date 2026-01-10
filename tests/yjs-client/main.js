@@ -203,24 +203,47 @@ function renderCursors(allStates, localClientId) {
     const computedStyle = window.getComputedStyle(editor);
     const lineHeight = parseFloat(computedStyle.lineHeight) || 20;
     const fontSize = parseFloat(computedStyle.fontSize) || 14;
-    const charWidth = fontSize * 0.6; // 更精确的字符宽度估算
+    const halfCharWidth = fontSize * 0.635; // 半角字符（英文）宽度
+    const fullCharWidth = fontSize * 1.05; // 全角字符（中文）宽度
     
-    // 渲染其他用户的光标
+    // 计算字符串的像素宽度，考虑中英文混合
+    function calculateTextWidth(text) {
+        let width = 0;
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            // 检查是否是中文字符、全角标点或其他全角字符
+            if (/[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef]/.test(char)) {
+                width += fullCharWidth;
+            } else {
+                width += halfCharWidth;
+            }
+        }
+        return width;
+    }
+    
+    // 渲染其他用户的光标和选择区域
     allStates.forEach((state, clientId) => {
         if (clientId === localClientId || !state || !state.cursor || !state.user) return;
         
-        const { position } = state.cursor;
+        const { position, selectionEnd } = state.cursor;
         const { color, name } = state.user;
+        
+        // 如果有选择区域，先渲染选择区域
+        if (selectionEnd && selectionEnd !== position) {
+            const start = Math.min(position, selectionEnd);
+            const end = Math.max(position, selectionEnd);
+            renderSelection(editor, start, end, color, lineHeight, calculateTextWidth, scrollTop, scrollLeft);
+        }
         
         // 计算光标位置
         const textBeforeCursor = editor.value.substring(0, position);
         const lines = textBeforeCursor.split('\n');
         const lineNumber = lines.length - 1;
-        const columnNumber = lines[lines.length - 1].length;
+        const columnText = lines[lines.length - 1];
         
-        // 计算光标的像素位置
+        // 计算光标的像素位置（考虑中英文混合）
         const top = lineNumber * lineHeight - scrollTop;
-        const left = columnNumber * charWidth - scrollLeft;
+        const left = calculateTextWidth(columnText) - scrollLeft;
         
         // 只显示可见区域内的光标
         if (top < -lineHeight || top > editor.clientHeight) return;
@@ -256,6 +279,103 @@ function renderCursors(allStates, localClientId) {
         cursorEl.appendChild(labelEl);
         cursorsLayer.appendChild(cursorEl);
     });
+}
+
+function renderSelection(editor, start, end, color, lineHeight, calculateTextWidth, scrollTop, scrollLeft) {
+    const cursorsLayer = document.getElementById('cursors');
+    if (!cursorsLayer) return;
+    
+    const text = editor.value;
+    const selectedText = text.substring(start, end);
+    
+    // 计算选择区域的起始和结束位置
+    const textBeforeStart = text.substring(0, start);
+    const startLines = textBeforeStart.split('\n');
+    const startLine = startLines.length - 1;
+    const startColText = startLines[startLines.length - 1];
+    
+    const textBeforeEnd = text.substring(0, end);
+    const endLines = textBeforeEnd.split('\n');
+    const endLine = endLines.length - 1;
+    const endColText = endLines[endLines.length - 1];
+    
+    // 如果选择在同一行
+    if (startLine === endLine) {
+        const top = startLine * lineHeight - scrollTop;
+        const left = calculateTextWidth(startColText) - scrollLeft;
+        const width = calculateTextWidth(endColText) - calculateTextWidth(startColText);
+        
+        if (top >= -lineHeight && top <= editor.clientHeight) {
+            const selectionEl = document.createElement('div');
+            selectionEl.style.position = 'absolute';
+            selectionEl.style.top = top + 'px';
+            selectionEl.style.left = Math.max(0, left) + 'px';
+            selectionEl.style.width = width + 'px';
+            selectionEl.style.height = lineHeight + 'px';
+            selectionEl.style.backgroundColor = color;
+            selectionEl.style.opacity = '0.3';
+            selectionEl.style.pointerEvents = 'none';
+            cursorsLayer.appendChild(selectionEl);
+        }
+    } else {
+        // 跨多行选择
+        // 第一行：从起始位置到行尾
+        const textLines = text.split('\n');
+        const firstLineTop = startLine * lineHeight - scrollTop;
+        const firstLineLeft = calculateTextWidth(startColText) - scrollLeft;
+        const firstLineFullText = textLines[startLine];
+        const firstLineWidth = calculateTextWidth(firstLineFullText) - calculateTextWidth(startColText);
+        
+        if (firstLineTop >= -lineHeight && firstLineTop <= editor.clientHeight && firstLineWidth > 0) {
+            const selectionEl = document.createElement('div');
+            selectionEl.style.position = 'absolute';
+            selectionEl.style.top = firstLineTop + 'px';
+            selectionEl.style.left = Math.max(0, firstLineLeft) + 'px';
+            selectionEl.style.width = firstLineWidth + 'px';
+            selectionEl.style.height = lineHeight + 'px';
+            selectionEl.style.backgroundColor = color;
+            selectionEl.style.opacity = '0.3';
+            selectionEl.style.pointerEvents = 'none';
+            cursorsLayer.appendChild(selectionEl);
+        }
+        
+        // 中间完整的行
+        for (let line = startLine + 1; line < endLine; line++) {
+            const lineTop = line * lineHeight - scrollTop;
+            if (lineTop < -lineHeight || lineTop > editor.clientHeight) continue;
+            
+            const lineWidth = calculateTextWidth(textLines[line]);
+            if (lineWidth > 0) {
+                const selectionEl = document.createElement('div');
+                selectionEl.style.position = 'absolute';
+                selectionEl.style.top = lineTop + 'px';
+                selectionEl.style.left = (0 - scrollLeft) + 'px';
+                selectionEl.style.width = lineWidth + 'px';
+                selectionEl.style.height = lineHeight + 'px';
+                selectionEl.style.backgroundColor = color;
+                selectionEl.style.opacity = '0.3';
+                selectionEl.style.pointerEvents = 'none';
+                cursorsLayer.appendChild(selectionEl);
+            }
+        }
+        
+        // 最后一行：从行首到结束位置
+        const lastLineTop = endLine * lineHeight - scrollTop;
+        const lastLineWidth = calculateTextWidth(endColText);
+        
+        if (lastLineTop >= -lineHeight && lastLineTop <= editor.clientHeight && lastLineWidth > 0) {
+            const selectionEl = document.createElement('div');
+            selectionEl.style.position = 'absolute';
+            selectionEl.style.top = lastLineTop + 'px';
+            selectionEl.style.left = (0 - scrollLeft) + 'px';
+            selectionEl.style.width = lastLineWidth + 'px';
+            selectionEl.style.height = lineHeight + 'px';
+            selectionEl.style.backgroundColor = color;
+            selectionEl.style.opacity = '0.3';
+            selectionEl.style.pointerEvents = 'none';
+            cursorsLayer.appendChild(selectionEl);
+        }
+    }
 }
 
 function disconnectFromRoom() {
