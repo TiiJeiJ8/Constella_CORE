@@ -24,20 +24,20 @@ app.use(compression());
 
 // Logging
 if (config.env !== 'test') {
-  app.use(
-    morgan('combined', {
-      stream: { write: (message) => logger.info(message.trim()) },
-    })
-  );
+    app.use(
+        morgan('combined', {
+            stream: { write: (message) => logger.info(message.trim()) },
+        })
+    );
 }
 
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    environment: config.env,
-  });
+    res.status(200).json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        environment: config.env,
+    });
 });
 
 // API routes

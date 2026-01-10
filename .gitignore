@@ -48,3 +48,10 @@ temp/
 *.db
 *.sqlite
 *.sqlite3
+data/
+
+# Configuration
+config/production.yaml
+config/local.yaml
+.env.local
+.env.production

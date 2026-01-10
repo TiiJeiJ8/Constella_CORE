@@ -1,0 +1,56 @@
+# Constella CORE - 配置文件
+# 默认配置（开发环境）
+
+app:
+  env: development
+  port: 3000
+  apiPrefix: /api/v1
+
+cors:
+  origin: http://localhost:3000
+
+jwt:
+  secret: your_jwt_secret_key_change_in_production
+  expiresIn: 7d
+  refreshExpiresIn: 30d
+
+rateLimit:
+  windowMs: 900000  # 15分钟
+  maxRequests: 100
+
+logging:
+  level: info
+
+# 数据库配置
+database:
+  # 开发环境使用内存数据库（SQLite）
+  type: memory
+  memory:
+    filename: ':memory:'
+  
+  # 生产环境 PostgreSQL 配置（当 type 为 postgres 时使用）
+  postgres:
+    host: localhost
+    port: 5432
+    database: constella_core
+    user: postgres
+    password: ''
+    ssl: false
+    pool:
+      min: 2
+      max: 10
+      idleTimeoutMillis: 30000
+      connectionTimeoutMillis: 2000
+
+# WebSocket 配置
+websocket:
+  path: /ws
+  pingInterval: 30000
+  pingTimeout: 5000
+
+# Yjs 文档持久化配置
+yjs:
+  persistence:
+    type: leveldb  # leveldb | postgres | memory
+    leveldbPath: ./data/yjs
+    snapshotInterval: 3600000  # 1小时快照一次
