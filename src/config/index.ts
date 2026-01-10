@@ -149,7 +149,11 @@ export const config = {
     apiPrefix: yamlConfig.app?.apiPrefix || process.env.API_PREFIX || '/api/v1',
 
     // CORS
-    corsOrigin: yamlConfig.cors?.origin || process.env.CORS_ORIGIN || 'http://localhost:3000',
+    corsOrigin: yamlConfig.cors?.origin
+        ? (yamlConfig.cors.origin.includes(',')
+            ? yamlConfig.cors.origin.split(',').map((o: string) => o.trim())
+            : yamlConfig.cors.origin)
+        : process.env.CORS_ORIGIN?.split(',').map(o => o.trim()) || ['http://localhost:5173', 'http://localhost:3000'],
 
     // JWT
     jwt: {
