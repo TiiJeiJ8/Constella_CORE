@@ -11,14 +11,14 @@
 
 存储用户基本信息和认证凭据。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 用户唯一标识 |
-| username | VARCHAR(50) | NOT NULL, UNIQUE | 用户名 |
-| email | VARCHAR(255) | NOT NULL, UNIQUE | 邮箱地址 |
-| password_hash | VARCHAR(255) | NOT NULL | 密码哈希值（bcrypt） |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 创建时间 |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 更新时间 |
+| 字段名        | 类型         | 约束                    | 说明                 |
+| ------------- | ------------ | ----------------------- | -------------------- |
+| id            | UUID/BIGINT  | PRIMARY KEY             | 用户唯一标识         |
+| username      | VARCHAR(50)  | NOT NULL, UNIQUE        | 用户名               |
+| email         | VARCHAR(255) | NOT NULL, UNIQUE        | 邮箱地址             |
+| password_hash | VARCHAR(255) | NOT NULL                | 密码哈希值（bcrypt） |
+| created_at    | TIMESTAMP    | NOT NULL, DEFAULT NOW() | 创建时间             |
+| updated_at    | TIMESTAMP    | NOT NULL, DEFAULT NOW() | 更新时间             |
 
 **索引：**
 - PRIMARY KEY (id)
@@ -31,16 +31,17 @@
 
 存储房间元数据和配置信息。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 房间唯一标识 |
-| name | VARCHAR(100) | NOT NULL | 房间名称 |
-| is_private | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否为私密房间 |
-| password | VARCHAR(255) | NULL | 房间密码（仅私密房间） |
-| settings | JSON/TEXT | NULL | 房间配置（JSON格式） |
-| owner_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 房主用户ID |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 创建时间 |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 更新时间 |
+| 字段名      | 类型         | 约束                    | 说明                                        |
+| ----------- | ------------ | ----------------------- | ------------------------------------------- |
+| id          | UUID/BIGINT  | PRIMARY KEY             | 房间唯一标识                                |
+| name        | VARCHAR(100) | NOT NULL                | 房间名称                                    |
+| description | TEXT         | NULL                    | 房间描述（支持搜索和展示）                  |
+| is_private  | BOOLEAN      | NOT NULL, DEFAULT FALSE | 是否为私密房间                              |
+| password    | VARCHAR(255) | NULL                    | 房间密码（仅私密房间）                      |
+| settings    | JSON/TEXT    | NULL                    | 房间配置（JSON格式，详见 ROOM_SETTINGS.md） |
+| owner_id    | UUID/BIGINT  | NOT NULL, FOREIGN KEY   | 房主用户ID                                  |
+| created_at  | TIMESTAMP    | NOT NULL, DEFAULT NOW() | 创建时间                                    |
+| updated_at  | TIMESTAMP    | NOT NULL, DEFAULT NOW() | 更新时间                                    |
 
 **外键：**
 - owner_id → users(id) ON DELETE CASCADE
@@ -56,13 +57,13 @@
 
 管理房间成员和权限关系。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 记录唯一标识 |
-| room_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 房间ID |
-| user_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 用户ID |
-| role | ENUM/VARCHAR(20) | NOT NULL, DEFAULT 'member' | 角色：owner/admin/member/viewer |
-| joined_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 加入时间 |
+| 字段名    | 类型             | 约束                       | 说明                            |
+| --------- | ---------------- | -------------------------- | ------------------------------- |
+| id        | UUID/BIGINT      | PRIMARY KEY                | 记录唯一标识                    |
+| room_id   | UUID/BIGINT      | NOT NULL, FOREIGN KEY      | 房间ID                          |
+| user_id   | UUID/BIGINT      | NOT NULL, FOREIGN KEY      | 用户ID                          |
+| role      | ENUM/VARCHAR(20) | NOT NULL, DEFAULT 'member' | 角色：owner/admin/member/viewer |
+| joined_at | TIMESTAMP        | NOT NULL, DEFAULT NOW()    | 加入时间                        |
 
 **角色说明：**
 - `owner`: 房主，拥有所有权限
@@ -86,14 +87,14 @@
 
 存储用户的刷新令牌，用于无感刷新访问令牌。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 记录唯一标识 |
-| user_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 用户ID |
-| token | VARCHAR(500) | NOT NULL, UNIQUE | 刷新令牌（哈希后存储） |
-| expires_at | TIMESTAMP | NOT NULL | 过期时间 |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 创建时间 |
-| revoked | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否已撤销 |
+| 字段名     | 类型         | 约束                    | 说明                   |
+| ---------- | ------------ | ----------------------- | ---------------------- |
+| id         | UUID/BIGINT  | PRIMARY KEY             | 记录唯一标识           |
+| user_id    | UUID/BIGINT  | NOT NULL, FOREIGN KEY   | 用户ID                 |
+| token      | VARCHAR(500) | NOT NULL, UNIQUE        | 刷新令牌（哈希后存储） |
+| expires_at | TIMESTAMP    | NOT NULL                | 过期时间               |
+| created_at | TIMESTAMP    | NOT NULL, DEFAULT NOW() | 创建时间               |
+| revoked    | BOOLEAN      | NOT NULL, DEFAULT FALSE | 是否已撤销             |
 
 **外键：**
 - user_id → users(id) ON DELETE CASCADE
@@ -110,16 +111,16 @@
 
 存储房间的 Yjs 文档更新数据，支持增量和快照存储。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 记录唯一标识 |
-| room_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 房间ID |
-| doc_name | VARCHAR(100) | NOT NULL, DEFAULT 'room' | 文档名称（room:<room_id>） |
-| doc_data | BYTEA/BLOB | NOT NULL | Yjs 文档二进制数据 |
-| version | INTEGER | NOT NULL, DEFAULT 1 | 文档版本号 |
-| is_snapshot | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否为快照 |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 创建时间 |
-| updated_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 更新时间 |
+| 字段名      | 类型         | 约束                     | 说明                       |
+| ----------- | ------------ | ------------------------ | -------------------------- |
+| id          | UUID/BIGINT  | PRIMARY KEY              | 记录唯一标识               |
+| room_id     | UUID/BIGINT  | NOT NULL, FOREIGN KEY    | 房间ID                     |
+| doc_name    | VARCHAR(100) | NOT NULL, DEFAULT 'room' | 文档名称（room:<room_id>） |
+| doc_data    | BYTEA/BLOB   | NOT NULL                 | Yjs 文档二进制数据         |
+| version     | INTEGER      | NOT NULL, DEFAULT 1      | 文档版本号                 |
+| is_snapshot | BOOLEAN      | NOT NULL, DEFAULT FALSE  | 是否为快照                 |
+| created_at  | TIMESTAMP    | NOT NULL, DEFAULT NOW()  | 创建时间                   |
+| updated_at  | TIMESTAMP    | NOT NULL, DEFAULT NOW()  | 更新时间                   |
 
 **说明：**
 - 建议使用 LevelDB 或专门的文档存储
@@ -141,17 +142,17 @@
 
 管理房间邀请记录。
 
-| 字段名 | 类型 | 约束 | 说明 |
-|--------|------|------|------|
-| id | UUID/BIGINT | PRIMARY KEY | 邀请唯一标识 |
-| room_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 房间ID |
-| inviter_id | UUID/BIGINT | NOT NULL, FOREIGN KEY | 邀请人ID |
-| invitee_email | VARCHAR(255) | NOT NULL | 受邀人邮箱 |
-| role | ENUM/VARCHAR(20) | NOT NULL, DEFAULT 'member' | 预设角色 |
-| token | VARCHAR(255) | NOT NULL, UNIQUE | 邀请令牌 |
-| expires_at | TIMESTAMP | NOT NULL | 过期时间 |
-| accepted | BOOLEAN | NOT NULL, DEFAULT FALSE | 是否已接受 |
-| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW() | 创建时间 |
+| 字段名        | 类型             | 约束                       | 说明         |
+| ------------- | ---------------- | -------------------------- | ------------ |
+| id            | UUID/BIGINT      | PRIMARY KEY                | 邀请唯一标识 |
+| room_id       | UUID/BIGINT      | NOT NULL, FOREIGN KEY      | 房间ID       |
+| inviter_id    | UUID/BIGINT      | NOT NULL, FOREIGN KEY      | 邀请人ID     |
+| invitee_email | VARCHAR(255)     | NOT NULL                   | 受邀人邮箱   |
+| role          | ENUM/VARCHAR(20) | NOT NULL, DEFAULT 'member' | 预设角色     |
+| token         | VARCHAR(255)     | NOT NULL, UNIQUE           | 邀请令牌     |
+| expires_at    | TIMESTAMP        | NOT NULL                   | 过期时间     |
+| accepted      | BOOLEAN          | NOT NULL, DEFAULT FALSE    | 是否已接受   |
+| created_at    | TIMESTAMP        | NOT NULL, DEFAULT NOW()    | 创建时间     |
 
 **外键：**
 - room_id → rooms(id) ON DELETE CASCADE

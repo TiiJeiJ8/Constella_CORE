@@ -14,7 +14,7 @@ export class RoomController {
      */
     async createRoom(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            const { name, is_private, password, settings } = req.body;
+            const { name, description, is_private, password, settings } = req.body;
             const owner_id = req.user?.userId;
 
             // 参数验证
@@ -31,6 +31,7 @@ export class RoomController {
             // 调用服务层
             const result = await roomService.createRoom({
                 name,
+                description,
                 is_private,
                 password,
                 settings,
@@ -50,15 +51,36 @@ export class RoomController {
      */
     async getRooms(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
-            const userId = req.query.user_id as string | undefined;
+            const queryUserId = req.query.user_id as string | undefined;
+            const currentUserId = req.user?.userId; // 当前登录用户ID（用于获取角色）
             const limit = parseInt(req.query.limit as string) || 50;
             const offset = parseInt(req.query.offset as string) || 0;
 
-            const result = await roomService.getRooms(userId, limit, offset);
+            // 传递 queryUserId 用于过滤，currentUserId 用于获取角色
+            const result = await roomService.getRooms(queryUserId, currentUserId, limit, offset);
 
             res.status(200).json(successResponse(result, 'Rooms retrieved successfully'));
         } catch (error) {
             logger.error('Get rooms error:', error);
+            next(error);
+        }
+    }
+
+    /**
+     * 获取所有房间（公开+私密）
+     * GET /api/v1/rooms/all
+     */
+    async getAllRooms(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const currentUserId = req.user?.userId;
+            const limit = parseInt(req.query.limit as string) || 50;
+            const offset = parseInt(req.query.offset as string) || 0;
+
+            const result = await roomService.getAllRooms(currentUserId, limit, offset);
+
+            res.status(200).json(successResponse(result, 'All rooms retrieved successfully'));
+        } catch (error) {
+            logger.error('Get all rooms error:', error);
             next(error);
         }
     }
@@ -236,6 +258,39 @@ export class RoomController {
             res.status(200).json(successResponse(result, 'Relay token generated successfully'));
         } catch (error) {
             logger.error('Get relay token error:', error);
+            next(error);
+        }
+    }
+
+    /**
+     * 删除房间
+     * DELETE /api/v1/rooms/:id
+     */
+    async deleteRoom(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params;
+            const { password } = req.body;
+            const user_id = req.user?.userId;
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400));
+                return;
+            }
+
+            if (!user_id) {
+                res.status(401).json(errorResponse('User authentication required', 401));
+                return;
+            }
+
+            const result = await roomService.deleteRoom({
+                room_id: id,
+                user_id,
+                password,
+            });
+
+            res.status(200).json(successResponse(result, 'Room deleted successfully'));
+        } catch (error) {
+            logger.error('Delete room error:', error);
             next(error);
         }
     }

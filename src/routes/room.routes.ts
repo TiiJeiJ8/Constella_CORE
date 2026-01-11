@@ -11,16 +11,30 @@ const router = Router();
 router.post('/', authenticateToken, (req, res, next) => roomController.createRoom(req, res, next));
 
 /**
- * GET /api/v1/rooms
- * 获取房间列表（支持分页与按用户过滤）
+ * GET /api/v1/rooms/all
+ * 获取所有房间（公开+私密）
  */
-router.get('/', (req, res, next) => roomController.getRooms(req, res, next));
+router.get('/all', (req, res, next) => roomController.getAllRooms(req, res, next));
+
+/**
+ * GET /api/v1/rooms
+ * 获取房间列表（支持分页与按用户过滤，需要认证以获取角色信息）
+ */
+router.get('/', authenticateToken, (req, res, next) => roomController.getRooms(req, res, next));
 
 /**
  * GET /api/v1/rooms/:id
  * 获取房间详情
  */
 router.get('/:id', (req, res, next) => roomController.getRoomById(req, res, next));
+
+/**
+ * DELETE /api/v1/rooms/:id
+ * 删除房间（需要认证，仅房主可删除）
+ */
+router.delete('/:id', authenticateToken, (req, res, next) =>
+    roomController.deleteRoom(req, res, next)
+);
 
 /**
  * POST /api/v1/rooms/:id/join

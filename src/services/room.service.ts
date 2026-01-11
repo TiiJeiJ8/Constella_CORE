@@ -13,6 +13,7 @@ import { AppError } from '../utils/appError';
  */
 interface CreateRoomParams {
     name: string;
+    description?: string;
     is_private?: boolean;
     password?: string;
     settings?: object;
@@ -75,6 +76,7 @@ export class RoomService {
             // 创建房间
             const room = await RoomModel.create({
                 name: params.name,
+                description: params.description,
                 is_private: params.is_private || false,
                 password: hashedPassword,
                 settings: params.settings,
@@ -102,13 +104,13 @@ export class RoomService {
     /**
      * 获取房间列表（支持分页和按用户过滤）
      */
-    async getRooms(userId?: string, limit = 50, offset = 0) {
+    async getRooms(filterUserId?: string, currentUserId?: string, limit = 50, offset = 0) {
         try {
             let rooms;
 
-            if (userId) {
+            if (filterUserId) {
                 // 获取用户参与的所有房间
-                const members = await RoomMemberModel.findByUserId(userId);
+                const members = await RoomMemberModel.findByUserId(filterUserId);
                 const roomIds = members.map((m) => m.room_id);
 
                 if (roomIds.length === 0) {
@@ -122,24 +124,110 @@ export class RoomService {
                 rooms = await RoomModel.findPublicRooms(limit, offset);
             }
 
-            // 移除密码字段
-            const roomsWithoutPassword = rooms
-                .map((room) => {
-                    if (room) {
-                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                        const { password, ...rest } = room;
-                        return rest;
+            // 为每个房间添加额外信息
+            const enrichedRooms = await Promise.all(
+                rooms.map(async (room) => {
+                    if (!room) return null;
+
+                    // 获取房主信息
+                    const owner = await UserModel.findById(room.owner_id);
+
+                    // 获取成员数量
+                    const members = await RoomMemberModel.findByRoomId(room.id);
+                    const member_count = members.length;
+
+                    // 获取当前用户角色（如果提供了 currentUserId）
+                    let user_role = null;
+                    if (currentUserId) {
+                        const membership = members.find((m) => m.user_id === currentUserId);
+                        user_role = membership ? membership.role : null;
                     }
-                    return null;
+
+                    // 移除密码字段
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { password, ...roomData } = room;
+
+                    return {
+                        ...roomData,
+                        owner: owner
+                            ? {
+                                id: owner.id,
+                                username: owner.username,
+                                email: owner.email,
+                            }
+                            : null,
+                        member_count,
+                        user_role,
+                    };
                 })
-                .filter((r) => r !== null);
+            );
+
+            const validRooms = enrichedRooms.filter((r) => r !== null);
 
             return {
-                rooms: roomsWithoutPassword,
-                total: roomsWithoutPassword.length,
+                rooms: validRooms,
+                total: validRooms.length,
             };
         } catch (error) {
             logger.error('Error getting rooms:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 获取所有房间（公开+私密）
+     */
+    async getAllRooms(currentUserId?: string, limit = 50, offset = 0) {
+        try {
+            // 获取所有房间（不过滤is_private）
+            const rooms = await RoomModel.findAllRooms(limit, offset);
+
+            // 为每个房间添加额外信息
+            const enrichedRooms = await Promise.all(
+                rooms.map(async (room) => {
+                    if (!room) return null;
+
+                    // 获取房主信息
+                    const owner = await UserModel.findById(room.owner_id);
+
+                    // 获取成员数量
+                    const members = await RoomMemberModel.findByRoomId(room.id);
+                    const member_count = members.length;
+
+                    // 获取当前用户角色
+                    let user_role = null;
+                    if (currentUserId) {
+                        const membership = members.find((m) => m.user_id === currentUserId);
+                        user_role = membership ? membership.role : null;
+                    }
+
+                    // 移除密码字段
+                    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                    const { password, ...roomData } = room;
+
+                    return {
+                        ...roomData,
+                        owner: owner
+                            ? {
+                                id: owner.id,
+                                username: owner.username,
+                                email: owner.email,
+                            }
+                            : null,
+                        member_count,
+                        user_role,
+                    };
+                })
+            );
+
+            const validRooms = enrichedRooms.filter((r) => r !== null);
+
+            return {
+                rooms: validRooms,
+                total: validRooms.length,
+            };
+        } catch (error) {
+            logger.error('Error getting all rooms:', error);
             throw error;
         }
     }
@@ -306,6 +394,51 @@ export class RoomService {
             return { member: updatedMember };
         } catch (error) {
             logger.error('Error updating permissions:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 删除房间（仅房主可删除）
+     */
+    async deleteRoom(params: { room_id: string; user_id: string; password?: string }) {
+        try {
+            const { room_id, user_id, password } = params;
+
+            // 获取房间信息
+            const room = await RoomModel.findById(room_id);
+            if (!room) {
+                throw new AppError('Room not found', 404);
+            }
+
+            // 验证是否是房主
+            if (room.owner_id !== user_id) {
+                throw new AppError('Only room owner can delete the room', 403);
+            }
+
+            // 如果是私密房间，验证密码
+            if (room.is_private && room.password) {
+                if (!password) {
+                    throw new AppError('Password required for private room', 400);
+                }
+
+                const passwordMatch = await bcrypt.compare(password, room.password);
+                if (!passwordMatch) {
+                    throw new AppError('Incorrect password', 401);
+                }
+            }
+
+            // 删除房间（CASCADE 会自动删除关联的成员记录）
+            const deleted = await RoomModel.delete(room_id);
+            if (!deleted) {
+                throw new AppError('Failed to delete room', 500);
+            }
+
+            logger.info(`Room ${room_id} deleted by user ${user_id}`);
+
+            return { success: true };
+        } catch (error) {
+            logger.error('Error deleting room:', error);
             throw error;
         }
     }

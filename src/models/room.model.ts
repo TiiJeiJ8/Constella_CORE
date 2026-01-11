@@ -11,14 +11,15 @@ export class RoomModel {
      */
     static async create(params: CreateRoomParams): Promise<Room> {
         const query = `
-      INSERT INTO rooms (name, is_private, password, settings, owner_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+      INSERT INTO rooms (name, description, is_private, password, settings, owner_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
       RETURNING *
     `;
 
         try {
             const result = await db.query<Room>(query, [
                 params.name,
+                params.description || null,
                 params.is_private || false,
                 params.password || null,
                 params.settings ? JSON.stringify(params.settings) : null,
@@ -72,13 +73,13 @@ export class RoomModel {
     static async findPublicRooms(limit = 50, offset = 0): Promise<Room[]> {
         const query = `
       SELECT * FROM rooms
-      WHERE is_private = false
+      WHERE is_private = $1
       ORDER BY created_at DESC
-      LIMIT $1 OFFSET $2
+      LIMIT $2 OFFSET $3
     `;
 
         try {
-            const result = await db.query<Room>(query, [limit, offset]);
+            const result = await db.query<Room>(query, [false, limit, offset]);
             return result.rows;
         } catch (error) {
             logger.error('Error finding public rooms:', error);
@@ -87,10 +88,29 @@ export class RoomModel {
     }
 
     /**
+     * 获取所有房间列表（公开+私密）
+     */
+    static async findAllRooms(limit = 50, offset = 0): Promise<Room[]> {
+        const query = `
+      SELECT * FROM rooms
+      ORDER BY created_at DESC
+      LIMIT $1 OFFSET $2
+    `;
+
+        try {
+            const result = await db.query<Room>(query, [limit, offset]);
+            return result.rows;
+        } catch (error) {
+            logger.error('Error finding all rooms:', error);
+            throw error;
+        }
+    }
+
+    /**
      * 更新房间信息
      */
     static async update(id: string, updates: Partial<Room>): Promise<Room | null> {
-        const allowedFields = ['name', 'is_private', 'password', 'settings'];
+        const allowedFields = ['name', 'description', 'is_private', 'password', 'settings'];
         const fields: string[] = [];
         const values: any[] = [];
         let paramIndex = 1;

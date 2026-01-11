@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS rooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(100) NOT NULL,
+    description TEXT,
     is_private BOOLEAN NOT NULL DEFAULT FALSE,
     password VARCHAR(255),
     settings JSONB,

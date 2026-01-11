@@ -91,7 +91,7 @@ export class AuthService {
     /**
      * 用户登录
      */
-    async login(params: LoginParams): Promise<Omit<AuthResponse, 'user'>> {
+    async login(params: LoginParams): Promise<AuthResponse> {
         const { email, password } = params;
 
         // 使用 username 查找用户
@@ -111,6 +111,12 @@ export class AuthService {
         const tokens = await this.generateTokens(user.id, user.email);
 
         return {
+            user: {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                created_at: user.created_at,
+            },
             access_token: tokens.accessToken,
             refresh_token: tokens.refreshToken,
         };
