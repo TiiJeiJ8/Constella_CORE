@@ -56,12 +56,7 @@ export class AuthService {
     async register(params: RegisterParams): Promise<AuthResponse> {
         const { username, email, password } = params;
 
-        // 检查用户是否已存在
-        const existingUserByEmail = await UserModel.findByEmail(email);
-        if (existingUserByEmail) {
-            throw new AppError('Email already registered', 409, AUTH_ERRORS.EMAIL_EXISTS);
-        }
-
+        // 检查用户名是否已存在
         const existingUserByUsername = await UserModel.findByUsername(username);
         if (existingUserByUsername) {
             throw new AppError('Username already taken', 409, AUTH_ERRORS.USERNAME_EXISTS);
@@ -99,16 +94,17 @@ export class AuthService {
     async login(params: LoginParams): Promise<Omit<AuthResponse, 'user'>> {
         const { email, password } = params;
 
-        // 查找用户
-        const user = await UserModel.findByEmail(email);
+        // 使用 username 查找用户
+        const user = await UserModel.findByUsername(email);
+
         if (!user) {
-            throw new AppError('Invalid email or password', 401, AUTH_ERRORS.INVALID_CREDENTIALS);
+            throw new AppError('Invalid username or password', 401, AUTH_ERRORS.INVALID_CREDENTIALS);
         }
 
         // 验证密码
         const isPasswordValid = await bcrypt.compare(password, user.password_hash);
         if (!isPasswordValid) {
-            throw new AppError('Invalid email or password', 401, AUTH_ERRORS.INVALID_CREDENTIALS);
+            throw new AppError('Invalid username or password', 401, AUTH_ERRORS.INVALID_CREDENTIALS);
         }
 
         // 生成令牌

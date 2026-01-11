@@ -1,6 +1,221 @@
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { config } from '../config';
 import logger from '../config/logger';
+import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * 内存数据存储
+ */
+class MemoryStore {
+    private tables: Map<string, Map<string, any>> = new Map();
+
+    constructor() {
+        // 初始化表
+        this.tables.set('users', new Map());
+        this.tables.set('rooms', new Map());
+        this.tables.set('room_members', new Map());
+        this.tables.set('refresh_tokens', new Map());
+        this.tables.set('room_documents', new Map());
+    }
+
+    /**
+     * 解析简单的 SQL INSERT 语句
+     */
+    executeInsert(sql: string, params: any[]): any {
+        // 匹配 INSERT INTO table_name (...) VALUES (...) RETURNING *
+        const match = sql.match(/INSERT INTO (\w+)\s*\((.*?)\)\s*VALUES/i);
+        if (!match) {
+            throw new Error('Unsupported INSERT query');
+        }
+
+        const tableName = match[1];
+        const columns = match[2].split(',').map(c => c.trim());
+
+        const table = this.tables.get(tableName);
+        if (!table) {
+            throw new Error(`Table ${tableName} not found`);
+        }
+
+        // 创建新记录
+        const record: any = {
+            id: uuidv4(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+        };
+
+        // 填充字段值
+        columns.forEach((col, index) => {
+            if (params[index] !== undefined) {
+                record[col] = params[index];
+            }
+        });
+
+        // 存储记录
+        table.set(record.id, record);
+
+        return record;
+    }
+
+    /**
+     * 解析简单的 SQL SELECT 语句
+     */
+    executeSelect(sql: string, params: any[]): any[] {
+        // 匹配 SELECT * FROM table_name WHERE field = $1
+        const match = sql.match(/SELECT \* FROM (\w+)(?:\s+WHERE\s+(\w+)\s*=\s*\$1)?/i);
+        if (!match) {
+            return [];
+        }
+
+        const tableName = match[1];
+        const whereField = match[2];
+
+        const table = this.tables.get(tableName);
+        if (!table) {
+            return [];
+        }
+
+        const records = Array.from(table.values());
+
+        // 如果有 WHERE 条件
+        if (whereField && params[0] !== undefined) {
+            return records.filter(r => r[whereField] === params[0]);
+        }
+
+        return records;
+    }
+
+    /**
+     * 解析简单的 SQL UPDATE 语句
+     */
+    executeUpdate(sql: string, params: any[]): any | null {
+        // 匹配 UPDATE table_name SET ... WHERE id = $n RETURNING *
+        const match = sql.match(/UPDATE (\w+)\s+SET\s+(.*?)\s+WHERE\s+id\s*=\s*\$(\d+)/i);
+        if (!match) {
+            throw new Error('Unsupported UPDATE query');
+        }
+
+        const tableName = match[1];
+        const setClause = match[2];
+        const idParamIndex = parseInt(match[3]) - 1;
+
+        const table = this.tables.get(tableName);
+        if (!table) {
+            throw new Error(`Table ${tableName} not found`);
+        }
+
+        const id = params[idParamIndex];
+        const record = table.get(id);
+
+        if (!record) {
+            return null;
+        }
+
+        // 解析 SET 子句
+        const setPairs = setClause.split(',').map(p => p.trim());
+        let paramIndex = 0;
+
+        setPairs.forEach(pair => {
+            const [field] = pair.split('=').map(s => s.trim());
+            if (field !== 'updated_at') {
+                record[field] = params[paramIndex++];
+            }
+        });
+
+        record.updated_at = new Date().toISOString();
+        table.set(id, record);
+
+        return record;
+    }
+
+    /**
+     * 解析简单的 SQL DELETE 语句
+     */
+    executeDelete(sql: string, params: any[]): number {
+        // 匹配 DELETE FROM table_name WHERE id = $1
+        const match = sql.match(/DELETE FROM (\w+)\s+WHERE\s+id\s*=\s*\$1/i);
+        if (!match) {
+            throw new Error('Unsupported DELETE query');
+        }
+
+        const tableName = match[1];
+        const table = this.tables.get(tableName);
+
+        if (!table) {
+            return 0;
+        }
+
+        const id = params[0];
+        const deleted = table.delete(id);
+
+        return deleted ? 1 : 0;
+    }
+
+    /**
+     * 执行查询
+     */
+    execute(sql: string, params: any[] = []): QueryResult {
+        const upperSql = sql.trim().toUpperCase();
+
+        try {
+            if (upperSql.startsWith('INSERT')) {
+                const record = this.executeInsert(sql, params);
+                return {
+                    rows: [record],
+                    command: 'INSERT',
+                    rowCount: 1,
+                    oid: 0,
+                    fields: [],
+                };
+            } else if (upperSql.startsWith('SELECT')) {
+                const records = this.executeSelect(sql, params);
+                return {
+                    rows: records,
+                    command: 'SELECT',
+                    rowCount: records.length,
+                    oid: 0,
+                    fields: [],
+                };
+            } else if (upperSql.startsWith('UPDATE')) {
+                const record = this.executeUpdate(sql, params);
+                return {
+                    rows: record ? [record] : [],
+                    command: 'UPDATE',
+                    rowCount: record ? 1 : 0,
+                    oid: 0,
+                    fields: [],
+                };
+            } else if (upperSql.startsWith('DELETE')) {
+                const count = this.executeDelete(sql, params);
+                return {
+                    rows: [],
+                    command: 'DELETE',
+                    rowCount: count,
+                    oid: 0,
+                    fields: [],
+                };
+            }
+
+            // 其他查询返回空结果
+            return {
+                rows: [],
+                command: '',
+                rowCount: 0,
+                oid: 0,
+                fields: [],
+            };
+        } catch (error) {
+            logger.error('Memory store execution error:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * 清空所有数据
+     */
+    clear(): void {
+        this.tables.forEach(table => table.clear());
+    }
+}
 
 /**
  * 数据库连接管理器
@@ -8,6 +223,7 @@ import logger from '../config/logger';
  */
 class DatabaseManager {
     private pool: Pool | null = null;
+    private memoryStore: MemoryStore | null = null;
     private isInitialized = false;
     private dbType: 'postgres' | 'memory';
 
@@ -79,8 +295,7 @@ class DatabaseManager {
      */
     private async initializeMemory(): Promise<void> {
         logger.info('Using in-memory database for development');
-        // 内存数据库不需要实际连接，数据存储在内存对象中
-        // 实际使用时可以使用 SQLite in-memory 或其他轻量级方案
+        this.memoryStore = new MemoryStore();
     }
 
     /**
@@ -95,15 +310,13 @@ class DatabaseManager {
         }
 
         if (this.dbType === 'memory') {
-            // 内存数据库模式：返回模拟结果
+            // 内存数据库模式：使用内存存储
+            if (!this.memoryStore) {
+                throw new Error('Memory store not initialized');
+            }
+
             logger.debug('Memory database query:', text);
-            return {
-                rows: [] as T[],
-                command: '',
-                rowCount: 0,
-                oid: 0,
-                fields: [],
-            };
+            return this.memoryStore.execute(text, params) as QueryResult<T>;
         }
 
         if (!this.pool) {
