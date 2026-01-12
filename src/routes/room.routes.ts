@@ -12,9 +12,9 @@ router.post('/', authenticateToken, (req, res, next) => roomController.createRoo
 
 /**
  * GET /api/v1/rooms/all
- * 获取所有房间（公开+私密）
+ * 获取所有房间（公开+私密，需要认证以获取角色信息）
  */
-router.get('/all', (req, res, next) => roomController.getAllRooms(req, res, next));
+router.get('/all', authenticateToken, (req, res, next) => roomController.getAllRooms(req, res, next));
 
 /**
  * GET /api/v1/rooms
@@ -24,9 +24,9 @@ router.get('/', authenticateToken, (req, res, next) => roomController.getRooms(r
 
 /**
  * GET /api/v1/rooms/:id
- * 获取房间详情
+ * 获取房间详情（可选认证，认证后可获取用户角色）
  */
-router.get('/:id', (req, res, next) => roomController.getRoomById(req, res, next));
+router.get('/:id', authenticateToken, (req, res, next) => roomController.getRoomById(req, res, next));
 
 /**
  * DELETE /api/v1/rooms/:id

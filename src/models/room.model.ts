@@ -7,6 +7,25 @@ import logger from '../config/logger';
  */
 export class RoomModel {
     /**
+     * 解析房间数据（确保settings是对象而非字符串）
+     */
+    private static parseRoom(room: any): Room {
+        if (!room) return room;
+
+        // 如果settings是字符串，解析为对象
+        if (room.settings && typeof room.settings === 'string') {
+            try {
+                room.settings = JSON.parse(room.settings);
+            } catch (error) {
+                logger.error('Error parsing room settings:', error);
+                room.settings = {};
+            }
+        }
+
+        return room;
+    }
+
+    /**
      * 创建新房间
      */
     static async create(params: CreateRoomParams): Promise<Room> {
@@ -26,7 +45,7 @@ export class RoomModel {
                 params.owner_id,
             ]);
 
-            return result.rows[0];
+            return this.parseRoom(result.rows[0]);
         } catch (error) {
             logger.error('Error creating room:', error);
             throw error;
@@ -41,7 +60,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [id]);
-            return result.rows[0] || null;
+            return result.rows[0] ? this.parseRoom(result.rows[0]) : null;
         } catch (error) {
             logger.error('Error finding room by id:', error);
             throw error;
@@ -60,7 +79,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [ownerId]);
-            return result.rows;
+            return result.rows.map(room => this.parseRoom(room));
         } catch (error) {
             logger.error('Error finding rooms by owner:', error);
             throw error;
@@ -80,7 +99,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [false, limit, offset]);
-            return result.rows;
+            return result.rows.map(room => this.parseRoom(room));
         } catch (error) {
             logger.error('Error finding public rooms:', error);
             throw error;
@@ -99,7 +118,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [limit, offset]);
-            return result.rows;
+            return result.rows.map(room => this.parseRoom(room));
         } catch (error) {
             logger.error('Error finding all rooms:', error);
             throw error;
@@ -144,7 +163,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, values);
-            return result.rows[0] || null;
+            return result.rows[0] ? this.parseRoom(result.rows[0]) : null;
         } catch (error) {
             logger.error('Error updating room:', error);
             throw error;
@@ -178,7 +197,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [limit, offset]);
-            return result.rows;
+            return result.rows.map(room => this.parseRoom(room));
         } catch (error) {
             logger.error('Error finding all rooms:', error);
             throw error;
@@ -213,7 +232,7 @@ export class RoomModel {
 
         try {
             const result = await db.query<Room>(query, [`%${keyword}%`, limit]);
-            return result.rows;
+            return result.rows.map(room => this.parseRoom(room));
         } catch (error) {
             logger.error('Error searching rooms:', error);
             throw error;
