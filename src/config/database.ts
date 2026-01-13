@@ -60,25 +60,41 @@ class MemoryStore {
      * 解析简单的 SQL SELECT 语句
      */
     executeSelect(sql: string, params: any[]): any[] {
-        // 匹配 SELECT * FROM table_name WHERE field = $1
-        const match = sql.match(/SELECT \* FROM (\w+)(?:\s+WHERE\s+(\w+)\s*=\s*\$1)?/i);
-        if (!match) {
+        // 匹配 SELECT * FROM table_name [WHERE ...]
+        const tableMatch = sql.match(/SELECT \* FROM (\w+)/i);
+        if (!tableMatch) {
             return [];
         }
 
-        const tableName = match[1];
-        const whereField = match[2];
-
+        const tableName = tableMatch[1];
         const table = this.tables.get(tableName);
         if (!table) {
             return [];
         }
 
-        const records = Array.from(table.values());
+        let records = Array.from(table.values());
 
-        // 如果有 WHERE 条件
-        if (whereField && params[0] !== undefined) {
-            return records.filter(r => r[whereField] === params[0]);
+        // 解析 WHERE 子句 - 使用 [\s\S] 以支持跨行匹配
+        const whereMatch = sql.match(/WHERE\s+([\s\S]+?)(?:ORDER BY|LIMIT|$)/i);
+        if (whereMatch) {
+            const whereClause = whereMatch[1].trim();
+
+            // 支持多个 AND 条件
+            const conditions = whereClause.split(/\s+AND\s+/i);
+
+            conditions.forEach((condition) => {
+                // 匹配 field = $n 或 field = 'value'
+                const condMatch = condition.match(/(\w+)\s*=\s*\$(\d+)/i);
+                if (condMatch) {
+                    const field = condMatch[1];
+                    const paramIndex = parseInt(condMatch[2]) - 1; // $1 对应 params[0]
+                    const value = params[paramIndex];
+
+                    if (value !== undefined) {
+                        records = records.filter(r => r[field] === value);
+                    }
+                }
+            });
         }
 
         return records;
