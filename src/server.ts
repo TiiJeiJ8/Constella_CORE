@@ -19,7 +19,7 @@ const startServer = async () => {
             logger.info('Database migrations completed');
         }
 
-        const server = app.listen(config.port, () => {
+        const server = app.listen(config.port, '0.0.0.0', () => {
             logger.info(`Server is running on port ${config.port}`);
             logger.info(`Environment: ${config.env}`);
             logger.info(`Database type: ${db.getType()}`);

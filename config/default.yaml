@@ -7,7 +7,7 @@ app:
   apiPrefix: /api/v1
 
 cors:
-  origin: http://localhost:5173,http://localhost:3000
+  origin: '*'
 
 jwt:
   secret: your_jwt_secret_key_change_in_production
