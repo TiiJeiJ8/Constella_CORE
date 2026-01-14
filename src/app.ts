@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
+import path from 'path';
 import { config } from './config';
 import logger from './config/logger';
 import { errorHandler } from './middleware/errorHandler';
@@ -22,14 +23,15 @@ app.use(
                     "'unsafe-inline'", // 允许内联脚本（用于测试页面）
                 ],
                 styleSrc: ["'self'", "'unsafe-inline'"],
-                imgSrc: ["'self'", 'data:', 'https:'],
-                connectSrc: ["'self'", 'ws:', 'wss:'], // 允许 WebSocket 连接
+                imgSrc: ["'self'", 'data:', 'https:', 'http:', 'blob:'],
+                connectSrc: ["'self'", 'ws:', 'wss:', 'http:', 'https:'], // 允许 WebSocket 和 HTTP 连接
                 fontSrc: ["'self'"],
                 objectSrc: ["'none'"],
                 mediaSrc: ["'self'"],
                 frameSrc: ["'none'"],
             },
         },
+        crossOriginResourcePolicy: { policy: 'cross-origin' }, // 允许跨域加载资源
     })
 );
 app.use(cors({
@@ -63,6 +65,13 @@ app.get('/health', (_req: Request, res: Response) => {
         environment: config.env,
     });
 });
+
+// Static files for uploaded assets (with CORS headers for cross-origin access)
+app.use('/uploads', (_req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    next();
+}, express.static(path.join(process.cwd(), 'uploads')));
 
 // API routes
 app.use(config.apiPrefix, routes);

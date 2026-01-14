@@ -1,8 +1,18 @@
 import { Router } from 'express';
+import multer from 'multer';
 import { roomController } from '../controllers/room.controller';
+import { assetController } from '../controllers/asset.controller';
 import { authenticateToken } from '../middleware/auth';
 
 const router = Router();
+
+// 配置 multer 使用内存存储
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
+    },
+});
 
 /**
  * POST /api/v1/rooms
@@ -66,6 +76,30 @@ router.put('/:id/permissions', authenticateToken, (req, res, next) =>
  */
 router.post('/:id/relay-token', authenticateToken, (req, res, next) =>
     roomController.getRelayToken(req, res, next)
+);
+
+/**
+ * POST /api/v1/rooms/:id/assets
+ * 上传资源（需要认证）
+ */
+router.post('/:id/assets', authenticateToken, upload.single('file'), (req, res, next) =>
+    assetController.uploadAsset(req, res, next)
+);
+
+/**
+ * GET /api/v1/rooms/:id/assets
+ * 获取房间资源列表（需要认证）
+ */
+router.get('/:id/assets', authenticateToken, (req, res, next) =>
+    assetController.getAssets(req, res, next)
+);
+
+/**
+ * DELETE /api/v1/rooms/:id/assets/:assetId
+ * 删除资源（需要认证，仅管理员）
+ */
+router.delete('/:id/assets/:assetId', authenticateToken, (req, res, next) =>
+    assetController.deleteAsset(req, res, next)
 );
 
 export default router;
