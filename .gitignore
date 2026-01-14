@@ -55,3 +55,6 @@ config/production.yaml
 config/local.yaml
 .env.local
 .env.production
+
+# Resource uploads
+uploads/
