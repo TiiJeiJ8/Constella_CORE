@@ -7,6 +7,8 @@ import { RoomRole } from '../types/database';
 import { config } from '../config';
 import logger from '../config/logger';
 import { AppError } from '../utils/appError';
+import path from 'path';
+import fs from 'fs/promises';
 
 /**
  * 创建房间参数
@@ -435,6 +437,15 @@ export class RoomService {
             }
 
             logger.info(`Room ${room_id} deleted by user ${user_id}`);
+
+            // 尝试删除房间上传的资源目录（如果存在）
+            try {
+                const assetsDir = path.join(process.cwd(), 'uploads', 'assets', room_id);
+                await fs.rm(assetsDir, { recursive: true, force: true });
+                logger.info(`Assets directory removed for room ${room_id}`);
+            } catch (err) {
+                logger.error(`Failed to remove assets for room ${room_id}:`, err);
+            }
 
             return { success: true };
         } catch (error) {
