@@ -1,7 +1,7 @@
 import { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 import { config } from '../config';
 import logger from '../config/logger';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 /**
  * 内存数据存储
@@ -38,7 +38,7 @@ class MemoryStore {
 
         // 创建新记录
         const record: any = {
-            id: uuidv4(),
+            id: randomUUID(),
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };

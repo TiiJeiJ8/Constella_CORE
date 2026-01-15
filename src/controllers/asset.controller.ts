@@ -4,7 +4,7 @@ import { RoomMemberModel } from '../models/roomMember.model';
 import logger from '../config/logger';
 import path from 'path';
 import fs from 'fs/promises';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 // 文件上传的基础目录
 const UPLOAD_BASE_DIR = path.join(process.cwd(), 'uploads');
@@ -96,7 +96,7 @@ export class AssetController {
 
             // 生成唯一文件名（使用原始扩展名）
             const fileExt = path.extname(originalName);
-            const assetId = uuidv4();
+            const assetId = randomUUID();
             const fileName = `${assetId}${fileExt}`;
             const filePath = path.join(roomDir, fileName);
 
