@@ -81,12 +81,6 @@ cp config/default.yaml config/local.yaml
 npm run dev
 ```
 
-### 4. Run Tests
-
-```bash
-npm test
-```
-
 ---
 
 ## 📦 Production Deployment (Docker)

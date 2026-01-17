@@ -84,12 +84,6 @@ cp config/default.yaml config/local.yaml
 npm run dev
 ```
 
-### 4. 运行测试
-
-```bash
-npm test
-```
-
 ---
 
 ## 📦 生产部署（Docker）
