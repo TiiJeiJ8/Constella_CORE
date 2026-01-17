@@ -58,3 +58,6 @@ config/local.yaml
 
 # Resource uploads
 uploads/
+
+# test
+tests/
