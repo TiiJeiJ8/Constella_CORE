@@ -187,11 +187,11 @@ export const config = {
             database:
                 yamlConfig.database?.postgres?.database || process.env.DB_NAME || 'constella_core',
             user: yamlConfig.database?.postgres?.user || process.env.DB_USER || 'postgres',
-                password: yamlConfig.database?.postgres?.password || process.env.DB_PASSWORD || '',
-                // Allow overriding SSL via environment variable DB_SSL (true/false).
-                ssl: (process.env.DB_SSL
-                    ? process.env.DB_SSL === 'true'
-                    : (yamlConfig.database?.postgres?.ssl || false)),
+            password: yamlConfig.database?.postgres?.password || process.env.DB_PASSWORD || '',
+            // Allow overriding SSL via environment variable DB_SSL (true/false).
+            ssl: (process.env.DB_SSL
+                ? process.env.DB_SSL === 'true'
+                : (yamlConfig.database?.postgres?.ssl || false)),
             pool: {
                 min: yamlConfig.database?.postgres?.pool?.min || 2,
                 max: yamlConfig.database?.postgres?.pool?.max || 10,
