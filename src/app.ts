@@ -1,9 +1,10 @@
-import express, { Application, Request, Response } from 'express';
+import express, { Application, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import path from 'path';
+import fs from 'fs';
 import { config } from './config';
 import logger from './config/logger';
 import { errorHandler } from './middleware/errorHandler';
@@ -72,6 +73,24 @@ app.use('/uploads', (_req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     next();
 }, express.static(path.join(process.cwd(), 'uploads')));
+
+// Serve frontend static assets (if present)
+try {
+    const frontendDist = (config as any).frontendDistPath as string;
+    if (frontendDist && fs.existsSync(frontendDist)) {
+        app.use(express.static(frontendDist));
+
+        // SPA fallback: if request is not for API, return index.html
+        app.get('*', (req: Request, res: Response, next: NextFunction) => {
+            if (req.path.startsWith(config.apiPrefix) || req.path.startsWith('/uploads')) {
+                return next();
+            }
+            res.sendFile(path.join(frontendDist, 'index.html'));
+        });
+    }
+} catch (err) {
+    logger.warn('Failed to mount frontend static assets:', err);
+}
 
 // API routes
 app.use(config.apiPrefix, routes);

@@ -217,4 +217,7 @@ export const config = {
             snapshotInterval: yamlConfig.yjs?.persistence?.snapshotInterval || 3600000,
         },
     },
+    // Frontend static assets path (can override with FRONTEND_DIST env)
+    frontendDistPath:
+        process.env.FRONTEND_DIST || path.join(process.cwd(), '..', 'web', 'dist'),
 };
