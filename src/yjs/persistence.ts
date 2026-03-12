@@ -76,8 +76,15 @@ export class MemoryPersistence implements IPersistence {
 export class LevelDBPersistence implements IPersistence {
     private db: Level<string, Uint8Array>;
     private docs: Map<string, Y.Doc> = new Map();
+    private ready: Promise<void>;
+    private isClosed = false;
+    private fallback: MemoryPersistence | null = null;
+    private openError: unknown = null;
 
-    constructor(dbPath: string) {
+    constructor(
+        private dbPath: string,
+        private options: { fallbackToMemoryOnLock?: boolean } = {}
+    ) {
         // 确保目录存在
         const dir = path.dirname(dbPath);
         if (!fs.existsSync(dir)) {
@@ -88,7 +95,54 @@ export class LevelDBPersistence implements IPersistence {
             valueEncoding: 'binary',
         });
 
+        this.ready = this.db.open().catch((error: unknown) => {
+            if (this.shouldFallbackToMemory(error)) {
+                this.fallback = new MemoryPersistence();
+                logger.warn(
+                    `LevelDB is locked at ${this.dbPath}, falling back to in-memory Yjs persistence for this process`,
+                    error
+                );
+                return;
+            }
+
+            this.openError = error;
+            logger.error(`Failed to open LevelDB persistence at ${this.dbPath}`, error);
+        });
+
         logger.info(`LevelDB persistence initialized at: ${dbPath}`);
+    }
+
+    private getErrorCode(error: unknown): string | undefined {
+        if (typeof error !== 'object' || error === null) {
+            return undefined;
+        }
+
+        const errorWithCode = error as { code?: string; cause?: { code?: string } };
+        return errorWithCode.cause?.code || errorWithCode.code;
+    }
+
+    private shouldFallbackToMemory(error: unknown): boolean {
+        return Boolean(this.options.fallbackToMemoryOnLock) && this.getErrorCode(error) === 'LEVEL_LOCKED';
+    }
+
+    private async ensureOpen(): Promise<void> {
+        if (this.fallback) {
+            return;
+        }
+
+        if (this.isClosed) {
+            throw new Error('LevelDB persistence is already closed');
+        }
+
+        await this.ready;
+
+        if (this.fallback) {
+            return;
+        }
+
+        if (this.openError) {
+            throw this.openError;
+        }
     }
 
     private getUpdateKey(docName: string, index: number): string {
@@ -100,6 +154,12 @@ export class LevelDBPersistence implements IPersistence {
     }
 
     async getYDoc(docName: string): Promise<Y.Doc> {
+        await this.ensureOpen();
+
+        if (this.fallback) {
+            return this.fallback.getYDoc(docName);
+        }
+
         if (this.docs.has(docName)) {
             return this.docs.get(docName)!;
         }
@@ -111,7 +171,7 @@ export class LevelDBPersistence implements IPersistence {
             // 读取元数据
             const metaKey = this.getMetaKey(docName);
             const metaBuffer = await this.db.get(metaKey);
-            
+
             // 检查是否存在数据
             if (!metaBuffer) {
                 // 文档不存在，创建新的
@@ -122,7 +182,7 @@ export class LevelDBPersistence implements IPersistence {
                 logger.info(`Created new Y.Doc in LevelDB: ${docName}`);
                 return doc;
             }
-            
+
             const meta = JSON.parse(Buffer.from(metaBuffer).toString());
 
             // 应用所有更新
@@ -157,6 +217,12 @@ export class LevelDBPersistence implements IPersistence {
     }
 
     async storeUpdate(docName: string, update: Uint8Array): Promise<void> {
+        await this.ensureOpen();
+
+        if (this.fallback) {
+            return this.fallback.storeUpdate(docName, update);
+        }
+
         try {
             // 获取当前更新数量
             const metaKey = this.getMetaKey(docName);
@@ -191,11 +257,23 @@ export class LevelDBPersistence implements IPersistence {
     }
 
     async getStateVector(docName: string): Promise<Uint8Array> {
+        await this.ensureOpen();
+
+        if (this.fallback) {
+            return this.fallback.getStateVector(docName);
+        }
+
         const doc = await this.getYDoc(docName);
         return Y.encodeStateVector(doc);
     }
 
     async clearDocument(docName: string): Promise<void> {
+        await this.ensureOpen();
+
+        if (this.fallback) {
+            return this.fallback.clearDocument(docName);
+        }
+
         try {
             const metaKey = this.getMetaKey(docName);
             const metaBuffer = await this.db.get(metaKey);
@@ -222,7 +300,28 @@ export class LevelDBPersistence implements IPersistence {
     }
 
     async close(): Promise<void> {
-        await this.db.close();
+        if (this.isClosed) {
+            return;
+        }
+
+        this.isClosed = true;
+
+        try {
+            await this.ready;
+        } catch (error) {
+            logger.warn('LevelDB failed to open before close was requested', error);
+        }
+
+        if (this.fallback) {
+            await this.fallback.close();
+            this.fallback = null;
+        }
+
+        const status = (this.db as { status?: string }).status;
+        if (status === 'open' || status === 'opening') {
+            await this.db.close();
+        }
+
         this.docs.clear();
         logger.info('LevelDB persistence closed');
     }
@@ -255,7 +354,9 @@ export class LevelDBPersistence implements IPersistence {
 export function createPersistence(type: string, options: Record<string, unknown>): IPersistence {
     switch (type) {
         case 'leveldb':
-            return new LevelDBPersistence(options.leveldbPath as string);
+            return new LevelDBPersistence(options.leveldbPath as string, {
+                fallbackToMemoryOnLock: Boolean(options.fallbackToMemoryOnLock),
+            });
         case 'memory':
         default:
             return new MemoryPersistence();

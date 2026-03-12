@@ -30,6 +30,7 @@ const startServer = async () => {
         logger.info('Initializing YJS WebSocket server...');
         const yjsPersistence = createPersistence(config.yjs.persistence.type, {
             leveldbPath: config.yjs.persistence.leveldbPath,
+            fallbackToMemoryOnLock: config.env === 'development',
         });
         const yjsServer = new YjsWebSocketServer(server, {
             path: config.websocket.path,

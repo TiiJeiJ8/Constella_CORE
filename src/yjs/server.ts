@@ -216,56 +216,61 @@ export class YjsWebSocketServer {
         const roomId = (conn as WebSocket & { roomId: string }).roomId;
         const userId = (conn as WebSocket & { userId: string }).userId;
 
-        if (!roomId) {
-            conn.close();
-            return;
+        try {
+            if (!roomId) {
+                conn.close();
+                return;
+            }
+
+            // 获取共享文档
+            const wsDoc = await this.getOrCreateDoc(roomId);
+            wsDoc.conns.set(conn, new Set());
+
+            // 设置消息处理
+            conn.on('message', (message: Buffer | ArrayBuffer) => {
+                const uint8Array = message instanceof ArrayBuffer
+                    ? new Uint8Array(message)
+                    : new Uint8Array(message);
+                this.handleMessage(conn, wsDoc, uint8Array);
+            });
+
+            // 设置关闭处理
+            conn.on('close', () => {
+                this.handleClose(conn, wsDoc);
+            });
+
+            // 设置错误处理
+            conn.on('error', (error) => {
+                logger.error(`WebSocket error for user ${userId}:`, error);
+            });
+
+            // 发送同步步骤 1
+            {
+                const encoder = encoding.createEncoder();
+                encoding.writeVarUint(encoder, messageSync);
+                syncProtocol.writeSyncStep1(encoder, wsDoc.doc);
+                this.send(conn, encoding.toUint8Array(encoder));
+            }
+
+            // 如果存在 awareness 状态，发送给新连接
+            if (wsDoc.awareness.getStates().size > 0) {
+                const encoder = encoding.createEncoder();
+                encoding.writeVarUint(encoder, messageAwareness);
+                encoding.writeVarUint8Array(
+                    encoder,
+                    awarenessProtocol.encodeAwarenessUpdate(
+                        wsDoc.awareness,
+                        Array.from(wsDoc.awareness.getStates().keys())
+                    )
+                );
+                this.send(conn, encoding.toUint8Array(encoder));
+            }
+
+            logger.info(`User ${userId} connected to room ${roomId} (${wsDoc.conns.size} connections)`);
+        } catch (error) {
+            logger.error(`Failed to initialize WebSocket connection for user ${userId} in room ${roomId}:`, error);
+            conn.close(1011, 'Failed to initialize collaborative document');
         }
-
-        // 获取共享文档
-        const wsDoc = await this.getOrCreateDoc(roomId);
-        wsDoc.conns.set(conn, new Set());
-
-        // 设置消息处理
-        conn.on('message', (message: Buffer | ArrayBuffer) => {
-            const uint8Array = message instanceof ArrayBuffer 
-                ? new Uint8Array(message)
-                : new Uint8Array(message);
-            this.handleMessage(conn, wsDoc, uint8Array);
-        });
-
-        // 设置关闭处理
-        conn.on('close', () => {
-            this.handleClose(conn, wsDoc);
-        });
-
-        // 设置错误处理
-        conn.on('error', (error) => {
-            logger.error(`WebSocket error for user ${userId}:`, error);
-        });
-
-        // 发送同步步骤 1
-        {
-            const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, messageSync);
-            syncProtocol.writeSyncStep1(encoder, wsDoc.doc);
-            this.send(conn, encoding.toUint8Array(encoder));
-        }
-
-        // 如果存在 awareness 状态，发送给新连接
-        if (wsDoc.awareness.getStates().size > 0) {
-            const encoder = encoding.createEncoder();
-            encoding.writeVarUint(encoder, messageAwareness);
-            encoding.writeVarUint8Array(
-                encoder,
-                awarenessProtocol.encodeAwarenessUpdate(
-                    wsDoc.awareness,
-                    Array.from(wsDoc.awareness.getStates().keys())
-                )
-            );
-            this.send(conn, encoding.toUint8Array(encoder));
-        }
-
-        logger.info(`User ${userId} connected to room ${roomId} (${wsDoc.conns.size} connections)`);
     }
 
     /**
@@ -292,7 +297,7 @@ export class YjsWebSocketServer {
                         wsDoc.doc,
                         conn
                     );
-                    
+
                     // 如果有响应，发送回客户端
                     if (encoding.length(encoder) > 1) {
                         this.send(conn, encoding.toUint8Array(encoder));

@@ -3,7 +3,7 @@
 
 app:
   env: development
-  port: 3000
+  port: 25565
   apiPrefix: /api/v1
 
 cors:
