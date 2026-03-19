@@ -1,4 +1,4 @@
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { RoomModel } from '../models/room.model';
 import { RoomMemberModel } from '../models/roomMember.model';
