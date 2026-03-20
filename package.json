@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
     "build": "tsc && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({type: 'commonjs'}, null, 2))\"",
-    "build:pkg": "npm run build && pkg dist/server.js --target node18-win-x64 --output build/constella-server.exe --compress GZip",
+    "build:pkg": "npm run build && pkg dist/server.js --target node18-win-x64 --output build/constella-server.exe --compress GZip && npm run copy:deps",
+    "copy:deps": "node -e \"const fs=require('fs'),p=require('path');const deps=['lib0','yjs','y-protocols','level','classic-level','abstract-level','catering','queue-microtask','browser-level','node-gyp-build'];deps.forEach(m=>{const s=p.join('node_modules',m),d=p.join('build','node_modules',m);if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});}})\"",
     "start": "node dist/server.js",
     "start:prod": "NODE_ENV=production node dist/server.js",
     "test": "jest",
@@ -26,7 +27,7 @@
     "assets": [
       "dist/**/*",
       "config/**/*",
-      "node_modules/classic-level/prebuilds/**/*.node"
+      "node_modules/y-protocols/**/*"
     ],
     "outputPath": "build"
   },

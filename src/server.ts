@@ -1,3 +1,57 @@
+// 修复 pkg 打包后的模块加载路径
+if ((process as any).pkg) {
+    const path = require('path');
+    const Module = require('module');
+    const execDir = path.dirname(process.execPath);
+    const nodeModulesPath = path.join(execDir, 'node_modules');
+    
+    // 修改模块搜索路径
+    Module.globalPaths.unshift(nodeModulesPath);
+    
+    // 修补 _resolveFilename 以支持从外部 node_modules 加载
+    const originalResolveFilename = Module._resolveFilename;
+  Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+        try {
+            return originalResolveFilename.call(this, request, parent, isMain, options);
+        } catch (err: any) {
+            // 如果默认解析失败，尝试从外部 node_modules 加载
+            if (err.code === 'MODULE_NOT_FOUND') {
+                try {
+                    // 创建一个临时的父模块来从外部 node_modules 解析
+                    const dummyModule = new Module('', null);
+                    dummyModule.paths = [nodeModulesPath];
+                    return originalResolveFilename.call(this, request, dummyModule, isMain, options);
+                } catch (e) {
+                    // 忽略并抛出原始错误
+                }
+            }
+            throw err;
+        }
+    };
+    
+    // 修补 fs.realpathSync 以重定向 snapshot 路径到外部 node_modules
+    const fs = require('fs');
+    const originalRealpathSync = fs.realpathSync;
+    fs.realpathSync = function (p: string, options: any) {
+        const result = originalRealpathSync.call(this, p, options);
+        // 如果路径指向 snapshot 中的 node_modules，重定向到外部
+        if (typeof result === 'string' && result.includes('\\snapshot\\CORE\\node_modules')) {
+            const relativePath = result.split('\\snapshot\\CORE\\node_modules\\')[1];
+            if (relativePath) {
+                const externalPath = path.join(nodeModulesPath, relativePath);
+                try {
+                    if (fs.existsSync(externalPath)) {
+                        return externalPath;
+                    }
+                } catch (e) {
+                    // ignore
+                }
+            }
+        }
+        return result;
+    };
+}
+
 import app from './app';
 import { config } from './config';
 import logger from './config/logger';
