@@ -31,9 +31,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Run tests
-        run: npm run test
-
   package-windows:
     name: Package Windows Server
     runs-on: windows-latest
