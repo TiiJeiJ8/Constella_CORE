@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { db } from '../config/database';
 import { RoomMember, CreateRoomMemberParams, RoomRole } from '../types/database';
 import logger from '../config/logger';
@@ -11,7 +11,7 @@ export class RoomMemberModel {
      * 添加房间成员
      */
     static async create(params: CreateRoomMemberParams): Promise<RoomMember> {
-        const memberId = uuidv4();
+        const memberId = randomUUID();
         const query = `
       INSERT INTO room_members (id, room_id, user_id, role, joined_at, created_at, updated_at)
       VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())

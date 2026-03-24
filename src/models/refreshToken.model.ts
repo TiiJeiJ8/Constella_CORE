@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { db } from '../config/database';
 import { RefreshToken, CreateRefreshTokenParams } from '../types/database';
 import logger from '../config/logger';
@@ -11,7 +11,7 @@ export class RefreshTokenModel {
      * 创建新的刷新令牌
      */
     static async create(params: CreateRefreshTokenParams): Promise<RefreshToken> {
-        const tokenId = uuidv4();
+        const tokenId = randomUUID();
         const query = `
       INSERT INTO refresh_tokens (id, user_id, token, expires_at, revoked, created_at, updated_at)
       VALUES ($1, $2, $3, $4, false, NOW(), NOW())

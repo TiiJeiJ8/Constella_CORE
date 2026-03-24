@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { db } from '../config/database';
 import { Room, CreateRoomParams } from '../types/database';
 import logger from '../config/logger';
@@ -30,7 +30,7 @@ export class RoomModel {
      * 创建新房间
      */
     static async create(params: CreateRoomParams): Promise<Room> {
-        const roomId = uuidv4();
+        const roomId = randomUUID();
         const query = `
       INSERT INTO rooms (id, name, description, is_private, password, settings, owner_id, created_at, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())

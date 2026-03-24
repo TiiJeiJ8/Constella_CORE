@@ -1,4 +1,4 @@
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import { db } from '../config/database';
 import { RoomDocument, CreateRoomDocumentParams } from '../types/database';
 import logger from '../config/logger';
@@ -11,7 +11,7 @@ export class RoomDocumentModel {
      * 创建或更新房间文档
      */
     static async upsert(params: CreateRoomDocumentParams): Promise<RoomDocument> {
-        const docId = uuidv4();
+        const docId = randomUUID();
         const docName = params.doc_name || 'room';
         const docData = params.doc_data;
         const version = params.version || 1;
