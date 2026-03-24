@@ -5,11 +5,12 @@
   "main": "dist/server.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/server.ts",
+    "dev:sqlite": "cross-env NODE_ENV=development-sqlite nodemon --exec ts-node src/server.ts",
     "build": "tsc && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({type: 'commonjs'}, null, 2))\"",
     "build:pkg": "npm run build && pkg dist/server.js --target node18-win-x64 --output build/constella-server.exe --compress GZip && npm run copy:deps",
-    "copy:deps": "node -e \"const fs=require('fs'),p=require('path');const deps=['lib0','yjs','y-protocols','level','classic-level','abstract-level','catering','queue-microtask','browser-level','node-gyp-build'];deps.forEach(m=>{const s=p.join('node_modules',m),d=p.join('build','node_modules',m);if(fs.existsSync(s)){fs.cpSync(s,d,{recursive:true});}})\"",
+    "copy:deps": "node -e \"const fs=require('fs'),p=require('path');fs.cpSync(p.join('node_modules'),p.join('build','node_modules'),{recursive:true,force:true});\"",
     "start": "node dist/server.js",
-    "start:prod": "NODE_ENV=production node dist/server.js",
+    "start:prod": "cross-env NODE_ENV=production node dist/server.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -17,11 +18,9 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "db:migrate": "ts-node src/database/cli.ts migrate",
-    "db:rollback": "ts-node src/database/cli.ts rollback",
-    "db:reset": "ts-node src/database/cli.ts reset",
-    "db:status": "ts-node src/database/cli.ts status",
-    "db:help": "ts-node src/database/cli.ts help"
+    "check:db": "node scripts/check-db.js",
+    "diagnose:yjs": "node scripts/diagnose-yjs.js",
+    "reset:db": "node scripts/reset-db.js"
   },
   "pkg": {
     "assets": [
@@ -42,6 +41,7 @@
   "dependencies": {
     "@types/ws": "^8.18.1",
     "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.8.0",
     "bonjour-service": "^1.3.0",
     "compression": "^1.7.4",
     "cors": "^2.8.5",
@@ -54,8 +54,6 @@
     "level": "^10.0.0",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
-    "pg": "^8.16.3",
-    "pg-pool": "^3.10.1",
     "uuid": "^13.0.0",
     "winston": "^3.11.0",
     "ws": "^8.19.0",
@@ -63,6 +61,7 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/bonjour": "^3.5.13",
     "@types/compression": "^1.7.5",
     "@types/cors": "^2.8.17",
@@ -73,11 +72,11 @@
     "@types/morgan": "^1.9.9",
     "@types/multer": "^2.0.0",
     "@types/node": "^20.19.28",
-    "@types/pg": "^8.16.0",
     "@types/supertest": "^6.0.3",
     "@types/uuid": "^10.0.0",
     "@typescript-eslint/eslint-plugin": "^6.15.0",
     "@typescript-eslint/parser": "^6.15.0",
+    "cross-env": "^10.1.0",
     "electron-builder": "^26.4.0",
     "eslint": "^8.56.0",
     "eslint-config-prettier": "^9.1.0",

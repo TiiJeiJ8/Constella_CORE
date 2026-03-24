@@ -185,19 +185,24 @@ export class LevelDBPersistence implements IPersistence {
 
             const meta = JSON.parse(Buffer.from(metaBuffer).toString());
 
-            // 应用所有更新
-            const updates: Uint8Array[] = [];
+            // 按顺序逐个应用所有更新（避免 mergeUpdates 的潜在问题）
+            let updateCount = 0;
             for (let i = 0; i < meta.updateCount; i++) {
-                const updateKey = this.getUpdateKey(docName, i);
-                const update = await this.db.get(updateKey);
-                updates.push(update);
+                try {
+                    const updateKey = this.getUpdateKey(docName, i);
+                    const update = await this.db.get(updateKey);
+                    Y.applyUpdate(doc, update);
+                    updateCount++;
+                    logger.debug(`Applied update #${i} for ${docName}`);
+                } catch (error: unknown) {
+                    if ((error as NodeJS.ErrnoException).code !== 'LEVEL_NOT_FOUND') {
+                        logger.warn(`Skipping missing update #${i} for ${docName}`, error);
+                    }
+                }
             }
 
-            // 合并所有更新
-            if (updates.length > 0) {
-                const mergedUpdate = Y.mergeUpdates(updates);
-                Y.applyUpdate(doc, mergedUpdate);
-                logger.info(`Loaded Y.Doc from LevelDB: ${docName} (${updates.length} updates)`);
+            if (updateCount > 0) {
+                logger.info(`Loaded Y.Doc from LevelDB: ${docName} (${updateCount} updates successfully applied)`);
             }
         } catch (error: unknown) {
             if ((error as NodeJS.ErrnoException).code === 'LEVEL_NOT_FOUND') {

@@ -8,35 +8,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_NAME: constella_core
-      DB_USER: postgres
-      DB_PASSWORD: example
-      DB_SSL: 'false'
       API_PREFIX: /api/v1
       JWT_SECRET: change_this_secret
-    depends_on:
-      - db
     volumes:
       - ./data/yjs:/usr/src/app/data/yjs
       - ./config:/usr/src/app/config
       - ./uploads:/usr/src/app/uploads
       - ./logs:/usr/src/app/logs
-
-  db:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: constella_core
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: example
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  pgdata:

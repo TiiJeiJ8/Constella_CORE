@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { RefreshToken, CreateRefreshTokenParams } from '../types/database';
 import logger from '../config/logger';
@@ -10,14 +11,16 @@ export class RefreshTokenModel {
      * 创建新的刷新令牌
      */
     static async create(params: CreateRefreshTokenParams): Promise<RefreshToken> {
+        const tokenId = uuidv4();
         const query = `
-      INSERT INTO refresh_tokens (user_id, token, expires_at, revoked, created_at)
-      VALUES ($1, $2, $3, false, NOW())
+      INSERT INTO refresh_tokens (id, user_id, token, expires_at, revoked, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, false, NOW(), NOW())
       RETURNING *
     `;
 
         try {
             const result = await db.query<RefreshToken>(query, [
+                tokenId,
                 params.user_id,
                 params.token,
                 params.expires_at,
@@ -77,7 +80,7 @@ export class RefreshTokenModel {
 
         try {
             const result = await db.query(query, [token]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error revoking refresh token:', error);
             throw error;
@@ -96,7 +99,7 @@ export class RefreshTokenModel {
 
         try {
             const result = await db.query(query, [userId]);
-            return result.rowCount || 0;
+            return result.rowCount ?? 0;
         } catch (error) {
             logger.error('Error revoking all user tokens:', error);
             throw error;
@@ -114,7 +117,7 @@ export class RefreshTokenModel {
 
         try {
             const result = await db.query(query);
-            return result.rowCount || 0;
+            return result.rowCount ?? 0;
         } catch (error) {
             logger.error('Error deleting expired tokens:', error);
             throw error;
@@ -129,7 +132,7 @@ export class RefreshTokenModel {
 
         try {
             const result = await db.query(query, [token]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error deleting refresh token:', error);
             throw error;

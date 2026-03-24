@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { User, CreateUserParams } from '../types/database';
 import logger from '../config/logger';
@@ -10,14 +11,16 @@ export class UserModel {
      * 创建新用户
      */
     static async create(params: CreateUserParams): Promise<User> {
+        const userId = uuidv4();
         const query = `
-      INSERT INTO users (username, email, password_hash, created_at, updated_at)
-      VALUES ($1, $2, $3, NOW(), NOW())
+      INSERT INTO users (id, username, email, password_hash, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW())
       RETURNING *
     `;
 
         try {
             const result = await db.query<User>(query, [
+                userId,
                 params.username,
                 params.email,
                 params.password_hash,
@@ -123,7 +126,7 @@ export class UserModel {
 
         try {
             const result = await db.query(query, [id]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error deleting user:', error);
             throw error;

@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { RoomDocument, CreateRoomDocumentParams } from '../types/database';
 import logger from '../config/logger';
@@ -10,31 +11,61 @@ export class RoomDocumentModel {
      * 创建或更新房间文档
      */
     static async upsert(params: CreateRoomDocumentParams): Promise<RoomDocument> {
-        const query = `
-      INSERT INTO room_documents (room_id, doc_name, doc_data, version, is_snapshot, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-      ON CONFLICT (room_id, doc_name)
-      DO UPDATE SET
-        doc_data = EXCLUDED.doc_data,
-        version = EXCLUDED.version,
-        is_snapshot = EXCLUDED.is_snapshot,
-        updated_at = NOW()
-      RETURNING *
-    `;
+        const docId = uuidv4();
+        const docName = params.doc_name || 'room';
+        const docData = params.doc_data;
+        const version = params.version || 1;
+        const isSnapshot = params.is_snapshot || false;
 
-        try {
-            const result = await db.query<RoomDocument>(query, [
-                params.room_id,
-                params.doc_name || 'room',
-                params.doc_data,
-                params.version || 1,
-                params.is_snapshot || false,
-            ]);
+        // 先检查是否存在
+        const existing = await this.findByRoomAndDoc(params.room_id, docName);
 
-            return result.rows[0];
-        } catch (error) {
-            logger.error('Error upserting room document:', error);
-            throw error;
+        if (existing) {
+            // 更新现有记录
+            const query = `
+        UPDATE room_documents
+        SET doc_data = $1, version = $2, is_snapshot = $3, updated_at = NOW()
+        WHERE room_id = $4 AND doc_name = $5
+        RETURNING *
+      `;
+
+            try {
+                const result = await db.query<RoomDocument>(query, [
+                    docData,
+                    version,
+                    isSnapshot,
+                    params.room_id,
+                    docName,
+                ]);
+
+                return result.rows[0];
+            } catch (error) {
+                logger.error('Error updating room document:', error);
+                throw error;
+            }
+        } else {
+            // 创建新记录
+            const query = `
+        INSERT INTO room_documents (id, room_id, doc_name, doc_data, version, is_snapshot, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+        RETURNING *
+      `;
+
+            try {
+                const result = await db.query<RoomDocument>(query, [
+                    docId,
+                    params.room_id,
+                    docName,
+                    docData,
+                    version,
+                    isSnapshot,
+                ]);
+
+                return result.rows[0];
+            } catch (error) {
+                logger.error('Error creating room document:', error);
+                throw error;
+            }
         }
     }
 
@@ -154,7 +185,7 @@ export class RoomDocumentModel {
 
         try {
             const result = await db.query(query, [roomId, docName]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error deleting room document:', error);
             throw error;
@@ -169,7 +200,7 @@ export class RoomDocumentModel {
 
         try {
             const result = await db.query(query, [roomId]);
-            return result.rowCount || 0;
+            return result.rowCount ?? 0;
         } catch (error) {
             logger.error('Error deleting all room documents:', error);
             throw error;
@@ -196,7 +227,7 @@ export class RoomDocumentModel {
 
         try {
             const result = await db.query(query, [roomId, docName, keepCount]);
-            return result.rowCount || 0;
+            return result.rowCount ?? 0;
         } catch (error) {
             logger.error('Error cleaning old snapshots:', error);
             throw error;

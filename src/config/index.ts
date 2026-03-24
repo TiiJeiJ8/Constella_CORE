@@ -42,27 +42,24 @@ interface YamlMemoryDatabaseConfig extends ConfigObject {
     filename?: string;
 }
 
-interface YamlPostgresPoolConfig extends ConfigObject {
-    min?: number;
-    max?: number;
-    idleTimeoutMillis?: number;
-    connectionTimeoutMillis?: number;
+interface YamlSqliteDatabaseConfig extends ConfigObject {
+    filepath?: string; // Database file path, e.g., './data/constella.db'
 }
 
-interface YamlPostgresDatabaseConfig extends ConfigObject {
-    host?: string;
-    port?: number;
-    database?: string;
-    user?: string;
-    password?: string;
-    ssl?: boolean;
-    pool?: YamlPostgresPoolConfig;
+/**
+ * 基础数据库扩展接口 - 用于未来支持其他数据库类型
+ */
+interface YamlDatabaseExtensionConfig extends ConfigObject {
+    // Reserved for future database extensions (PostgreSQL, MySQL, etc.)
+    // [key: string]: any;
 }
 
 interface YamlDatabaseConfig extends ConfigObject {
-    type?: string;
+    type?: string; // 'memory', 'sqlite', or future database types
     memory?: YamlMemoryDatabaseConfig;
-    postgres?: YamlPostgresDatabaseConfig;
+    sqlite?: YamlSqliteDatabaseConfig;
+    // Reserved for future database extensions
+    extension?: YamlDatabaseExtensionConfig;
 }
 
 interface YamlWebSocketConfig extends ConfigObject {
@@ -180,26 +177,7 @@ export const config = {
     database: {
         type: yamlConfig.database?.type || 'memory',
         memory: yamlConfig.database?.memory || { filename: ':memory:' },
-        postgres: {
-            host: yamlConfig.database?.postgres?.host || process.env.DB_HOST || 'localhost',
-            port:
-                yamlConfig.database?.postgres?.port || parseInt(process.env.DB_PORT || '5432', 10),
-            database:
-                yamlConfig.database?.postgres?.database || process.env.DB_NAME || 'constella_core',
-            user: yamlConfig.database?.postgres?.user || process.env.DB_USER || 'postgres',
-            password: yamlConfig.database?.postgres?.password || process.env.DB_PASSWORD || '',
-            // Allow overriding SSL via environment variable DB_SSL (true/false).
-            ssl: (process.env.DB_SSL
-                ? process.env.DB_SSL === 'true'
-                : (yamlConfig.database?.postgres?.ssl || false)),
-            pool: {
-                min: yamlConfig.database?.postgres?.pool?.min || 2,
-                max: yamlConfig.database?.postgres?.pool?.max || 10,
-                idleTimeoutMillis: yamlConfig.database?.postgres?.pool?.idleTimeoutMillis || 30000,
-                connectionTimeoutMillis:
-                    yamlConfig.database?.postgres?.pool?.connectionTimeoutMillis || 2000,
-            },
-        },
+        sqlite: yamlConfig.database?.sqlite || { filepath: './data/constella.db' },
     },
 
     // WebSocket

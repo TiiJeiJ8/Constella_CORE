@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { Room, CreateRoomParams } from '../types/database';
 import logger from '../config/logger';
@@ -29,14 +30,16 @@ export class RoomModel {
      * 创建新房间
      */
     static async create(params: CreateRoomParams): Promise<Room> {
+        const roomId = uuidv4();
         const query = `
-      INSERT INTO rooms (name, description, is_private, password, settings, owner_id, created_at, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW())
+      INSERT INTO rooms (id, name, description, is_private, password, settings, owner_id, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
       RETURNING *
     `;
 
         try {
             const result = await db.query<Room>(query, [
+                roomId,
                 params.name,
                 params.description || null,
                 params.is_private || false,
@@ -171,14 +174,21 @@ export class RoomModel {
     }
 
     /**
-     * 删除房间
+     * 删除房间（同时删除关联的成员和文档）
      */
     static async delete(id: string): Promise<boolean> {
-        const query = 'DELETE FROM rooms WHERE id = $1';
-
         try {
+            // 对于 SQLite，需要逐个删除关联记录以避免外键约束失败
+            // 删除房间成员
+            await db.query('DELETE FROM room_members WHERE room_id = $1', [id]);
+
+            // 删除房间文档
+            await db.query('DELETE FROM room_documents WHERE room_id = $1', [id]);
+
+            // 最后删除房间本身
+            const query = 'DELETE FROM rooms WHERE id = $1';
             const result = await db.query(query, [id]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error deleting room:', error);
             throw error;

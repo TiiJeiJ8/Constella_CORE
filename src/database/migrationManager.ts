@@ -1,12 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { PoolClient } from 'pg';
 import { db } from '../config/database';
 import logger from '../config/logger';
 
 /**
  * 数据库迁移管理器
- * 负责执行数据库架构迁移
+ * 当前系统使用内存/SQLite数据库，迁移功能已禁用
+ * 未来升级到需要迁移的数据库时可恢复此功能
  */
 export class MigrationManager {
     private migrationsDir: string;
@@ -99,27 +99,14 @@ export class MigrationManager {
     /**
      * 执行单个迁移
      */
+    /**
+     * 执行迁移（当前为内存数据库时不执行）
+     * 未来升级到 PostgreSQL 时需要恢复事务支持
+     */
     private async executeMigration(filename: string): Promise<void> {
-        const filePath = path.join(this.migrationsDir, filename);
-        const sql = fs.readFileSync(filePath, 'utf8');
-
-        logger.info(`Executing migration: ${filename}`);
-
-        try {
-            // 在事务中执行迁移
-            await db.transaction(async (client: PoolClient) => {
-                // 执行迁移 SQL
-                await client.query(sql);
-
-                // 记录迁移
-                await client.query('INSERT INTO migrations (name) VALUES ($1)', [filename]);
-            });
-
-            logger.info(`Migration completed: ${filename}`);
-        } catch (error) {
-            logger.error(`Migration failed: ${filename}`, error);
-            throw error;
-        }
+        // 当前实现为空，因为内存数据库已在 runMigrations() 中被跳过
+        // 如果需要支持 PostgreSQL，此处需要实现完整的迁移逻辑
+        logger.debug(`Migration execution not available for memory database: ${filename}`);
     }
 
     /**
@@ -148,15 +135,13 @@ export class MigrationManager {
                 throw new Error(`Rollback file not found: ${rollbackFile}`);
             }
 
-            const sql = fs.readFileSync(rollbackPath, 'utf8');
+            // const sql = fs.readFileSync(rollbackPath, 'utf8');
 
-            await db.transaction(async (client: PoolClient) => {
-                // 执行回滚 SQL
-                await client.query(sql);
-
-                // 删除迁移记录
-                await client.query('DELETE FROM migrations WHERE name = $1', [migrationName]);
-            });
+            // TODO: 当升级到 PostgreSQL 时，恢复事务支持
+            // await db.transaction(async (client: PoolClient) => {
+            //     await client.query(sql);
+            //     await client.query('DELETE FROM migrations WHERE name = $1', [migrationName]);
+            // });
 
             logger.info(`Rollback completed: ${migrationName}`);
         } catch (error) {

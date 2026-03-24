@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { RoomMember, CreateRoomMemberParams, RoomRole } from '../types/database';
 import logger from '../config/logger';
@@ -10,14 +11,16 @@ export class RoomMemberModel {
      * 添加房间成员
      */
     static async create(params: CreateRoomMemberParams): Promise<RoomMember> {
+        const memberId = uuidv4();
         const query = `
-      INSERT INTO room_members (room_id, user_id, role, joined_at)
-      VALUES ($1, $2, $3, NOW())
+      INSERT INTO room_members (id, room_id, user_id, role, joined_at, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, NOW(), NOW(), NOW())
       RETURNING *
     `;
 
         try {
             const result = await db.query<RoomMember>(query, [
+                memberId,
                 params.room_id,
                 params.user_id,
                 params.role || RoomRole.MEMBER,
@@ -144,7 +147,7 @@ export class RoomMemberModel {
 
         try {
             const result = await db.query(query, [roomId, userId]);
-            return (result.rowCount || 0) > 0;
+            return (result.rowCount ?? result.rows.length) > 0;
         } catch (error) {
             logger.error('Error deleting room member:', error);
             throw error;

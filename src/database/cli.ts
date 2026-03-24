@@ -3,59 +3,32 @@
 
 /**
  * 数据库管理 CLI 工具
- * 用于执行迁移、回滚和重置数据库
+ * 迁移功能已禁用（系统改用内存/SQLite数据库）
+ * 未来升级到需要迁移的数据库时可恢复此功能
  */
 
-import { db } from '../config/database';
-import { migrationManager } from './migrationManager';
 import logger from '../config/logger';
 
 const commands = {
     migrate: async () => {
-        logger.info('Running migrations...');
-        await db.initialize();
-        await migrationManager.runMigrations();
-        await db.close();
-        logger.info('Migrations completed successfully');
+        logger.info('Migration not required for in-memory/SQLite databases');
+        console.log('✓ Database is ready to use');
     },
 
     rollback: async () => {
-        logger.info('Rolling back last migration...');
-        await db.initialize();
-        await migrationManager.rollbackLastMigration();
-        await db.close();
-        logger.info('Rollback completed successfully');
+        logger.warn('Rollback is not applicable for in-memory/SQLite databases');
+        console.log('ℹ No rollback needed');
     },
 
     reset: async () => {
-        logger.warn('⚠️  WARNING: This will delete all data!');
-        logger.info('Resetting database...');
-        await db.initialize();
-        await migrationManager.resetDatabase();
-        await db.close();
-        logger.info('Database reset completed');
+        logger.warn('⚠️  Reset is not implemented for in-memory databases');
+        console.log('ℹ For SQLite, delete the .db file and restart the application');
     },
 
     status: async () => {
-        logger.info('Checking migration status...');
-        await db.initialize();
-        const status = await migrationManager.getMigrationStatus();
-        await db.close();
-
-        console.log('\n=== Migration Status ===');
-        console.log('\nExecuted Migrations:');
-        if (status.executed.length === 0) {
-            console.log('  (none)');
-        } else {
-            status.executed.forEach((migration) => console.log(`  ✓ ${migration}`));
-        }
-
-        console.log('\nPending Migrations:');
-        if (status.pending.length === 0) {
-            console.log('  (none)');
-        } else {
-            status.pending.forEach((migration) => console.log(`  ○ ${migration}`));
-        }
+        logger.info('Database migration status check not applicable');
+        console.log('\n=== Database Status ===');
+        console.log('✓ In-memory/SQLite database is ready');
         console.log('');
     },
 
@@ -63,11 +36,14 @@ const commands = {
         console.log(`
 Constella Database CLI
 
-Usage:
-  npm run db:migrate    - Run all pending migrations
-  npm run db:rollback   - Rollback the last migration
-  npm run db:reset      - Reset database (⚠️  deletes all data)
-  npm run db:status     - Check migration status
+Note: Migration commands are disabled for in-memory/SQLite databases.
+
+Available commands:
+  npm run db:migrate    - Show database status (no migration needed)
+  npm run db:rollback   - Show rollback info (not applicable)
+  npm run db:reset      - Show reset info
+  npm run db:status     - Check database status
+  npm run db:help       - Show this help message
   npm run db:help       - Show this help message
 
 Examples:

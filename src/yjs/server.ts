@@ -142,11 +142,19 @@ export class YjsWebSocketServer {
      */
     private async getOrCreateDoc(docName: string): Promise<WSSharedDoc> {
         if (this.docs.has(docName)) {
+            logger.debug(`[Yjs] Using cached Y.Doc: ${docName}`);
             return this.docs.get(docName)!;
         }
 
         // 从持久化加载或创建新文档
+        logger.debug(`[Yjs] Loading Y.Doc from persistence: ${docName}`);
         const doc = await this.persistence.getYDoc(docName);
+
+        // 诊断：检查文档是否包含数据
+        const nodeMap = doc.getMap('nodes');
+        const edgeMap = doc.getMap('edges');
+        logger.debug(`[Yjs] Loaded doc content - nodes: ${nodeMap.size}, edges: ${edgeMap.size}`);
+
         const awareness = new awarenessProtocol.Awareness(doc);
 
         const wsDoc: WSSharedDoc = {
@@ -222,6 +230,8 @@ export class YjsWebSocketServer {
                 return;
             }
 
+            logger.debug(`[Yjs] Getting/creating doc for room: ${roomId}`);
+
             // 获取共享文档
             const wsDoc = await this.getOrCreateDoc(roomId);
             wsDoc.conns.set(conn, new Set());
@@ -245,15 +255,33 @@ export class YjsWebSocketServer {
             });
 
             // 发送同步步骤 1
+            logger.debug(`[Yjs] Sending SyncStep1 to client for room: ${roomId}`);
             {
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, messageSync);
                 syncProtocol.writeSyncStep1(encoder, wsDoc.doc);
-                this.send(conn, encoding.toUint8Array(encoder));
+                const message = encoding.toUint8Array(encoder);
+                logger.debug(`[Yjs] SyncStep1 message size: ${message.length} bytes`);
+                this.send(conn, message);
+            }
+
+            // 关键修复：发送完整的文档状态作为更新
+            // 这确保客户端在任何情况下都能收到所有历史数据
+            {
+                const currentState = Y.encodeStateAsUpdate(wsDoc.doc);
+                if (currentState.length > 0) {
+                    const encoder = encoding.createEncoder();
+                    encoding.writeVarUint(encoder, messageSync);
+                    syncProtocol.writeUpdate(encoder, currentState);
+                    const message = encoding.toUint8Array(encoder);
+                    logger.debug(`[Yjs] Sending full document state (${currentState.length} bytes encoded, ${message.length} bytes total)`);
+                    this.send(conn, message);
+                }
             }
 
             // 如果存在 awareness 状态，发送给新连接
             if (wsDoc.awareness.getStates().size > 0) {
+                logger.debug(`[Yjs] Sending awareness states to client`);
                 const encoder = encoding.createEncoder();
                 encoding.writeVarUint(encoder, messageAwareness);
                 encoding.writeVarUint8Array(
@@ -287,10 +315,18 @@ export class YjsWebSocketServer {
             const decoder = decoding.createDecoder(message);
             const messageType = decoding.readVarUint(decoder);
 
+            logger.debug(`[Yjs] Received message type: ${messageType}, size: ${message.length} bytes`);
+
             switch (messageType) {
                 case messageSync: {
+                    logger.debug(`[Yjs] Processing sync message for room: ${wsDoc.name}`);
+
                     // Sync protocol 消息
                     encoding.writeVarUint(encoder, messageSync);
+
+                    // 记录处理前的 encoder 长度
+                    const encoderLenBefore = encoding.length(encoder);
+
                     syncProtocol.readSyncMessage(
                         decoder,
                         encoder,
@@ -298,14 +334,24 @@ export class YjsWebSocketServer {
                         conn
                     );
 
+                    // 检查是否有响应
+                    const encoderLenAfter = encoding.length(encoder);
+                    const hasResponse = encoderLenAfter > encoderLenBefore;
+
+                    logger.debug(`[Yjs] Sync response size: ${encoderLenAfter - encoderLenBefore} bytes${hasResponse ? '' : ' (no data to send)'}`);
+
                     // 如果有响应，发送回客户端
-                    if (encoding.length(encoder) > 1) {
-                        this.send(conn, encoding.toUint8Array(encoder));
+                    if (hasResponse) {
+                        const responseMessage = encoding.toUint8Array(encoder);
+                        logger.debug(`[Yjs] Sending sync response (${responseMessage.length} bytes)`);
+                        this.send(conn, responseMessage);
                     }
                     break;
                 }
 
                 case messageAwareness: {
+                    logger.debug(`[Yjs] Processing awareness update`);
+
                     // Awareness 消息
                     const update = decoding.readVarUint8Array(decoder);
                     awarenessProtocol.applyAwarenessUpdate(

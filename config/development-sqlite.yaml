@@ -1,5 +1,5 @@
-# Constella CORE - 配置文件
-# 默认配置（开发环境）
+# Constella CORE - 开发环境 SQLite 配置
+# 用于开发时使用本地 SQLite 数据库进行测试（npm run dev:sqlite）
 
 app:
   env: development
@@ -19,18 +19,14 @@ rateLimit:
   maxRequests: 100
 
 logging:
-  level: info
+  level: debug
 
-# 数据库配置
+# 开发环境 SQLite 配置
 database:
-  type: memory  # 可选: memory | sqlite
-  memory:
-    filename: ':memory:'
-  # SQLite 配置示例
-  # sqlite:
-  #   filepath: './data/constella.db'
+  type: sqlite
+  sqlite:
+    filepath: ./data/constella-dev.db
 
-# WebSocket 配置
 websocket:
   path: /ws
   pingInterval: 30000
@@ -39,6 +35,6 @@ websocket:
 # Yjs 文档持久化配置
 yjs:
   persistence:
-    type: leveldb  # leveldb | memory
+    type: leveldb
     leveldbPath: ./data/yjs
     snapshotInterval: 3600000  # 1小时快照一次

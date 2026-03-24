@@ -4,13 +4,13 @@ if ((process as any).pkg) {
     const Module = require('module');
     const execDir = path.dirname(process.execPath);
     const nodeModulesPath = path.join(execDir, 'node_modules');
-    
+
     // 修改模块搜索路径
     Module.globalPaths.unshift(nodeModulesPath);
-    
+
     // 修补 _resolveFilename 以支持从外部 node_modules 加载
     const originalResolveFilename = Module._resolveFilename;
-  Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+    Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
         try {
             return originalResolveFilename.call(this, request, parent, isMain, options);
         } catch (err: any) {
@@ -28,7 +28,7 @@ if ((process as any).pkg) {
             throw err;
         }
     };
-    
+
     // 修补 fs.realpathSync 以重定向 snapshot 路径到外部 node_modules
     const fs = require('fs');
     const originalRealpathSync = fs.realpathSync;
@@ -56,7 +56,6 @@ import app from './app';
 import { config } from './config';
 import logger from './config/logger';
 import { db } from './config/database';
-import { migrationManager } from './database/migrationManager';
 import { YjsWebSocketServer, createPersistence } from './yjs';
 
 const startServer = async () => {
@@ -65,13 +64,6 @@ const startServer = async () => {
         logger.info('Initializing database connection...');
         await db.initialize();
         logger.info('Database connection established');
-
-        // 执行数据库迁移
-        if (db.getType() === 'postgres') {
-            logger.info('Running database migrations...');
-            await migrationManager.runMigrations();
-            logger.info('Database migrations completed');
-        }
 
         const server = app.listen(config.port, '0.0.0.0', () => {
             logger.info(`Server is running on port ${config.port}`);
