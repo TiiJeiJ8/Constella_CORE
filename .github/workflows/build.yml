@@ -1,0 +1,78 @@
+name: Build & Test Backend
+
+on:
+  push:
+    branches: [main, develop, master]
+  pull_request:
+    branches: [main, develop, master]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify Server (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Run tests
+        run: npm run test
+
+  package-windows:
+    name: Package Windows Server
+    runs-on: windows-latest
+    needs: verify
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.x
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows package
+        run: npm run build:pkg
+
+      - name: Upload server dist artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-dist
+          path: dist
+          retention-days: 5
+
+      - name: Upload packaged server artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-build
+          path: build
+          retention-days: 5
