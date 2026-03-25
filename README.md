@@ -2,6 +2,8 @@
 
 [CN](/README.md) | [EN](./README-en.md)
 
+[Contributing](./CONTRIBUTING.md) | [Security](./SECURITY.md) | [Code of Conduct](./CODE_OF_CONDUCT.md)
+
 > Constella 实时协作无限画布的**后端核心服务**，负责身份认证、房间与权限管理、实时协作中继、数据持久化以及对外 REST API。
 
 本仓库是 Constella 系统的**中枢与基础设施层**。它并非简单的接口服务，而是围绕「**协作一致性**」「**权限边界**」与「**数据可靠性**」构建的完整后端工程。

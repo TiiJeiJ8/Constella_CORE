@@ -2,6 +2,8 @@
 
 [CN](/README.md) | [EN](./README-en.md)
 
+[Contributing](./CONTRIBUTING.md) | [Security](./SECURITY.md) | [Code of Conduct](./CODE_OF_CONDUCT.md)
+
 > The **core backend service** of Constella, a real-time collaborative infinite canvas. It is responsible for authentication, room and permission management, real-time collaboration relay, data persistence, and public REST APIs.
 
 This repository represents the **infrastructure and central nervous system** of the Constella system. It is not a simple CRUD API service, but a complete backend engineered around **collaborative consistency**, **clear permission boundaries**, and **data reliability**.

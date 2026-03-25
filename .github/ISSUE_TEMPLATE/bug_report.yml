@@ -1,0 +1,69 @@
+name: Bug Report
+description: Report a reproducible problem in the Constella server
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API
+        - Auth
+        - Database
+        - Yjs / WebSocket
+        - Config / Deployment
+        - Docs
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the server with ...
+        2. Send request to ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: |
+        OS:
+        Node:
+        npm:
+        Database:
+        Config mode:
+    validations:
+      required: true
+  - type: textarea
+    id: request
+    attributes:
+      label: Request / response or websocket context
+      description: Include endpoint, payload, response, or room path if applicable
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or stack traces
