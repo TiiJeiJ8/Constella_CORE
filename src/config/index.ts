@@ -74,6 +74,25 @@ interface YamlYjsPersistenceConfig extends ConfigObject {
     snapshotInterval?: number;
 }
 
+interface YamlDatabasePerformanceConfig extends ConfigObject {
+    enabled?: boolean;
+    slowQueryMs?: number;
+    logAllQueries?: boolean;
+}
+
+interface YamlMaintenanceConfig extends ConfigObject {
+    enabled?: boolean;
+    intervalMs?: number;
+    snapshotRetention?: number;
+    tokenGraceMs?: number;
+    assetOrphanMaxAgeMs?: number;
+}
+
+interface YamlPerformanceConfig extends ConfigObject {
+    database?: YamlDatabasePerformanceConfig;
+    maintenance?: YamlMaintenanceConfig;
+}
+
 interface YamlYjsConfig extends ConfigObject {
     persistence?: YamlYjsPersistenceConfig;
 }
@@ -85,6 +104,7 @@ interface YamlConfig extends ConfigObject {
     rateLimit?: YamlRateLimitConfig;
     logging?: YamlLoggingConfig;
     database?: YamlDatabaseConfig;
+    performance?: YamlPerformanceConfig;
     websocket?: YamlWebSocketConfig;
     yjs?: YamlYjsConfig;
 }
@@ -137,6 +157,17 @@ function replaceEnvVariables(obj: ConfigValue): ConfigValue {
     return obj;
 }
 
+function readBooleanEnv(name: string, defaultValue: boolean): boolean {
+    const value = process.env[name];
+    if (value === undefined) return defaultValue;
+    return !['false', '0', 'off', 'no'].includes(value.toLowerCase());
+}
+
+function readNumberEnv(name: string, defaultValue: number): number {
+    const value = Number.parseInt(process.env[name] || '', 10);
+    return Number.isFinite(value) ? value : defaultValue;
+}
+
 const yamlConfig = loadYamlConfig();
 
 export const config = {
@@ -172,6 +203,36 @@ export const config = {
 
     // Logging
     logLevel: yamlConfig.logging?.level || process.env.LOG_LEVEL || 'info',
+
+    // Performance
+    performance: {
+        database: {
+            enabled: yamlConfig.performance?.database?.enabled ?? readBooleanEnv('DB_PERF_ENABLED', true),
+            slowQueryMs:
+                yamlConfig.performance?.database?.slowQueryMs ??
+                readNumberEnv('DB_SLOW_QUERY_MS', 120),
+            logAllQueries:
+                yamlConfig.performance?.database?.logAllQueries ??
+                readBooleanEnv('DB_PERF_LOG_ALL_QUERIES', false),
+        },
+        maintenance: {
+            enabled:
+                yamlConfig.performance?.maintenance?.enabled ??
+                readBooleanEnv('DB_MAINTENANCE_ENABLED', true),
+            intervalMs:
+                yamlConfig.performance?.maintenance?.intervalMs ??
+                readNumberEnv('DB_MAINTENANCE_INTERVAL_MS', 30 * 60 * 1000),
+            snapshotRetention:
+                yamlConfig.performance?.maintenance?.snapshotRetention ??
+                readNumberEnv('DB_SNAPSHOT_RETENTION', 5),
+            tokenGraceMs:
+                yamlConfig.performance?.maintenance?.tokenGraceMs ??
+                readNumberEnv('DB_TOKEN_GRACE_MS', 5 * 60 * 1000),
+            assetOrphanMaxAgeMs:
+                yamlConfig.performance?.maintenance?.assetOrphanMaxAgeMs ??
+                readNumberEnv('DB_ASSET_ORPHAN_MAX_AGE_MS', 24 * 60 * 60 * 1000),
+        },
+    },
 
     // Database
     database: {

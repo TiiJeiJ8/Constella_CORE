@@ -1,67 +1,13 @@
-// 修复 pkg 打包后的模块加载路径
-if ((process as any).pkg) {
-    const path = require('path');
-    const Module = require('module');
-    const execDir = path.dirname(process.execPath);
-    const nodeModulesPath = path.join(execDir, 'node_modules');
-
-    // 修改模块搜索路径
-    Module.globalPaths.unshift(nodeModulesPath);
-
-    // 修补 _resolveFilename 以支持从外部 node_modules 加载
-    const originalResolveFilename = Module._resolveFilename;
-    Module._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
-        try {
-            return originalResolveFilename.call(this, request, parent, isMain, options);
-        } catch (err: any) {
-            // 如果默认解析失败，尝试从外部 node_modules 加载
-            if (err.code === 'MODULE_NOT_FOUND') {
-                try {
-                    // 创建一个临时的父模块来从外部 node_modules 解析
-                    const dummyModule = new Module('', null);
-                    dummyModule.paths = [nodeModulesPath];
-                    return originalResolveFilename.call(this, request, dummyModule, isMain, options);
-                } catch (e) {
-                    // 忽略并抛出原始错误
-                }
-            }
-            throw err;
-        }
-    };
-
-    // 修补 fs.realpathSync 以重定向 snapshot 路径到外部 node_modules
-    const fs = require('fs');
-    const originalRealpathSync = fs.realpathSync;
-    fs.realpathSync = function (p: string, options: any) {
-        const result = originalRealpathSync.call(this, p, options);
-        // 如果路径指向 snapshot 中的 node_modules，重定向到外部
-        if (typeof result === 'string' && result.includes('\\snapshot\\CORE\\node_modules')) {
-            const relativePath = result.split('\\snapshot\\CORE\\node_modules\\')[1];
-            if (relativePath) {
-                const externalPath = path.join(nodeModulesPath, relativePath);
-                try {
-                    if (fs.existsSync(externalPath)) {
-                        return externalPath;
-                    }
-                } catch (e) {
-                    // ignore
-                }
-            }
-        }
-        return result;
-    };
-}
-
 import app from './app';
 import { config } from './config';
 import logger from './config/logger';
 import { db } from './config/database';
 import { YjsWebSocketServer, createPersistence } from './yjs';
 import { startLanDiscoveryPublisher, stopLanDiscoveryPublisher } from './discovery';
+import { startDatabaseMaintenance } from './maintenance';
 
 const startServer = async () => {
     try {
-        // 初始化数据库连接
         logger.info('Initializing database connection...');
         await db.initialize();
         logger.info('Database connection established');
@@ -74,7 +20,6 @@ const startServer = async () => {
             startLanDiscoveryPublisher(config.port);
         });
 
-        // 初始化 YJS WebSocket 服务器
         logger.info('Initializing YJS WebSocket server...');
         const yjsPersistence = createPersistence(config.yjs.persistence.type, {
             leveldbPath: config.yjs.persistence.leveldbPath,
@@ -86,15 +31,14 @@ const startServer = async () => {
             persistence: yjsPersistence,
         });
         logger.info(`YJS WebSocket server initialized at ${config.websocket.path}`);
+        const maintenance = startDatabaseMaintenance();
 
-        // Graceful shutdown
         const gracefulShutdown = async (signal: string) => {
             logger.info(`${signal} received, closing server gracefully`);
 
             server.close(async () => {
                 logger.info('Server closed');
 
-                // 关闭 YJS 服务器
                 try {
                     await yjsServer.close();
                     logger.info('YJS WebSocket server closed');
@@ -102,14 +46,18 @@ const startServer = async () => {
                     logger.error('Error closing YJS server:', error);
                 }
 
-                // 关闭 LAN discovery 发布
                 try {
                     await stopLanDiscoveryPublisher();
                 } catch (error) {
                     logger.error('Error stopping LAN discovery publisher:', error);
                 }
 
-                // 关闭数据库连接
+                try {
+                    maintenance.stop();
+                } catch (error) {
+                    logger.error('Error stopping DB maintenance:', error);
+                }
+
                 try {
                     await db.close();
                     logger.info('Database connection closed');
@@ -120,7 +68,6 @@ const startServer = async () => {
                 process.exit(0);
             });
 
-            // Force close after 10 seconds
             setTimeout(() => {
                 logger.error('Forced shutdown after timeout');
                 process.exit(1);
@@ -130,7 +77,6 @@ const startServer = async () => {
         process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
         process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-        // Unhandled errors
         process.on('unhandledRejection', (reason: Error) => {
             logger.error('Unhandled Rejection:', reason);
             throw reason;

@@ -1,5 +1,6 @@
 import { config } from '../config';
 import logger from '../config/logger';
+import { createDatabasePerformanceMonitor } from '../performance';
 import { randomUUID } from 'crypto';
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
@@ -768,3 +769,17 @@ class DatabaseManager {
 
 // 导出单例实例
 export const db = new DatabaseManager();
+
+const databasePerformanceMonitor = createDatabasePerformanceMonitor(config.performance.database);
+
+const originalDbQuery = db.query.bind(db);
+db.query = (async <T>(text: string, params?: any[]): Promise<QueryResult<T>> => {
+    return databasePerformanceMonitor.trackQuery(
+        {
+            databaseType: db.getType(),
+            sql: text,
+            params,
+        },
+        () => originalDbQuery<T>(text, params)
+    );
+}) as typeof db.query;
