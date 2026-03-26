@@ -160,23 +160,126 @@ class MemoryStore {
      * 解析简单的 SQL DELETE 语句
      */
     executeDelete(sql: string, params: any[]): number {
-        // 匹配 DELETE FROM table_name WHERE id = $1
-        const match = sql.match(/DELETE FROM (\w+)\s+WHERE\s+id\s*=\s*\$1/i);
-        if (!match) {
+        const normalizedSql = sql.replace(/\s+/g, ' ').trim().replace(/;$/, '');
+
+        // 支持房间文档快照清理语句（DELETE ... WHERE id IN (SELECT ... OFFSET $3)）
+        const snapshotCleanupMatch = normalizedSql.match(
+            /^DELETE FROM room_documents WHERE id IN \(SELECT id FROM room_documents WHERE room_id = \$1 AND doc_name = \$2 AND is_snapshot = true ORDER BY version DESC, updated_at DESC OFFSET \$3\)$/i
+        );
+
+        if (snapshotCleanupMatch) {
+            const table = this.tables.get('room_documents');
+            if (!table) {
+                return 0;
+            }
+
+            const roomId = params[0];
+            const docName = params[1];
+            const keepCount = Math.max(Number(params[2]) || 0, 0);
+
+            const snapshots = Array.from(table.values())
+                .filter((record) =>
+                    record.room_id === roomId &&
+                    record.doc_name === docName &&
+                    Boolean(record.is_snapshot)
+                )
+                .sort((a, b) => {
+                    const versionDiff = (Number(b.version) || 0) - (Number(a.version) || 0);
+                    if (versionDiff !== 0) {
+                        return versionDiff;
+                    }
+
+                    const aTime = new Date(a.updated_at).getTime() || 0;
+                    const bTime = new Date(b.updated_at).getTime() || 0;
+                    return bTime - aTime;
+                });
+
+            const idsToDelete = new Set(snapshots.slice(keepCount).map((record) => record.id));
+            let deletedCount = 0;
+
+            Array.from(table.entries()).forEach(([id]) => {
+                if (idsToDelete.has(id)) {
+                    table.delete(id);
+                    deletedCount++;
+                }
+            });
+
+            return deletedCount;
+        }
+
+        const deleteMatch = normalizedSql.match(/^DELETE FROM (\w+)(?:\s+WHERE\s+(.+))?$/i);
+        if (!deleteMatch) {
             throw new Error('Unsupported DELETE query');
         }
 
-        const tableName = match[1];
+        const tableName = deleteMatch[1];
+        const whereClause = deleteMatch[2];
         const table = this.tables.get(tableName);
 
         if (!table) {
             return 0;
         }
 
-        const id = params[0];
-        const deleted = table.delete(id);
+        if (!whereClause) {
+            const total = table.size;
+            table.clear();
+            return total;
+        }
 
-        return deleted ? 1 : 0;
+        const conditions = whereClause
+            .split(/\s+AND\s+/i)
+            .map((condition) => condition.trim())
+            .filter(Boolean);
+
+        const matchesCondition = (record: any, condition: string): boolean => {
+            const placeholderMatch = condition.match(/^(\w+)\s*=\s*\$(\d+)$/i);
+            if (placeholderMatch) {
+                const field = placeholderMatch[1];
+                const paramIndex = parseInt(placeholderMatch[2], 10) - 1;
+                return record[field] === params[paramIndex];
+            }
+
+            const booleanMatch = condition.match(/^(\w+)\s*=\s*(true|false)$/i);
+            if (booleanMatch) {
+                const field = booleanMatch[1];
+                const expected = booleanMatch[2].toLowerCase() === 'true';
+                return Boolean(record[field]) === expected;
+            }
+
+            const literalMatch = condition.match(/^(\w+)\s*=\s*'([^']*)'$/i);
+            if (literalMatch) {
+                const field = literalMatch[1];
+                const expected = literalMatch[2];
+                return String(record[field] ?? '') === expected;
+            }
+
+            const ltNowMatch = condition.match(/^(\w+)\s*<\s*NOW\(\)$/i);
+            if (ltNowMatch) {
+                const field = ltNowMatch[1];
+                const fieldTime = new Date(record[field]).getTime();
+                return Number.isFinite(fieldTime) && fieldTime < Date.now();
+            }
+
+            const gtNowMatch = condition.match(/^(\w+)\s*>\s*NOW\(\)$/i);
+            if (gtNowMatch) {
+                const field = gtNowMatch[1];
+                const fieldTime = new Date(record[field]).getTime();
+                return Number.isFinite(fieldTime) && fieldTime > Date.now();
+            }
+
+            throw new Error(`Unsupported DELETE condition: ${condition}`);
+        };
+
+        let deletedCount = 0;
+        Array.from(table.entries()).forEach(([id, record]) => {
+            const shouldDelete = conditions.every((condition) => matchesCondition(record, condition));
+            if (shouldDelete) {
+                table.delete(id);
+                deletedCount++;
+            }
+        });
+
+        return deletedCount;
     }
 
     /**

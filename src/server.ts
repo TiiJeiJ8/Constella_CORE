@@ -57,6 +57,7 @@ import { config } from './config';
 import logger from './config/logger';
 import { db } from './config/database';
 import { YjsWebSocketServer, createPersistence } from './yjs';
+import { startLanDiscoveryPublisher, stopLanDiscoveryPublisher } from './discovery';
 
 const startServer = async () => {
     try {
@@ -70,6 +71,7 @@ const startServer = async () => {
             logger.info(`Environment: ${config.env}`);
             logger.info(`Database type: ${db.getType()}`);
             logger.info(`API available at: http://localhost:${config.port}${config.apiPrefix}`);
+            startLanDiscoveryPublisher(config.port);
         });
 
         // 初始化 YJS WebSocket 服务器
@@ -98,6 +100,13 @@ const startServer = async () => {
                     logger.info('YJS WebSocket server closed');
                 } catch (error) {
                     logger.error('Error closing YJS server:', error);
+                }
+
+                // 关闭 LAN discovery 发布
+                try {
+                    await stopLanDiscoveryPublisher();
+                } catch (error) {
+                    logger.error('Error stopping LAN discovery publisher:', error);
                 }
 
                 // 关闭数据库连接
