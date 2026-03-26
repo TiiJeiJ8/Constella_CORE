@@ -7,8 +7,6 @@
     "dev": "nodemon --exec ts-node src/server.ts",
     "dev:sqlite": "cross-env NODE_ENV=development-sqlite nodemon --exec ts-node src/server.ts",
     "build": "tsc && node -e \"require('fs').writeFileSync('dist/package.json', JSON.stringify({type: 'commonjs'}, null, 2))\"",
-    "build:pkg": "npm run build && pkg dist/server.js --target node18-win-x64 --output build/constella-server.exe --compress GZip && npm run copy:deps",
-    "copy:deps": "node -e \"const fs=require('fs'),p=require('path');fs.cpSync(p.join('node_modules'),p.join('build','node_modules'),{recursive:true,force:true});\"",
     "start": "node dist/server.js",
     "start:prod": "cross-env NODE_ENV=production node dist/server.js",
     "test": "jest",
@@ -21,14 +19,6 @@
     "check:db": "node scripts/check-db.js",
     "diagnose:yjs": "node scripts/diagnose-yjs.js",
     "reset:db": "node scripts/reset-db.js"
-  },
-  "pkg": {
-    "assets": [
-      "dist/**/*",
-      "config/**/*",
-      "node_modules/y-protocols/**/*"
-    ],
-    "outputPath": "build"
   },
   "keywords": [
     "api",
@@ -83,7 +73,6 @@
     "eslint-plugin-prettier": "^5.0.1",
     "jest": "^29.7.0",
     "nodemon": "^3.0.2",
-    "pkg": "^5.8.1",
     "prettier": "^3.1.1",
     "supertest": "^7.2.2",
     "ts-jest": "^29.1.1",
