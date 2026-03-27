@@ -6,7 +6,7 @@ Backend service for Constella collaboration, including authentication, room mana
 
 ## Version
 
-- Current server version: `1.0.0`
+- Current server version: `1.0.1`
 
 ## Runtime Requirements
 

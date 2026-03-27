@@ -1,6 +1,6 @@
 {
   "name": "constella-core-api",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Enterprise-grade backend API built with Node.js and TypeScript",
   "main": "dist/server.js",
   "scripts": {

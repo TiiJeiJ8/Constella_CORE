@@ -6,7 +6,7 @@ import { config } from '../config';
 
 const DISCOVERY_TYPE = 'constella';
 const DISCOVERY_PROTOCOL = 'tcp';
-const DEFAULT_VERSION = '1.0.0';
+const DEFAULT_VERSION = '1.0.1';
 const instanceId = process.env.CONSTELLA_INSTANCE_ID || randomUUID();
 const serverName = process.env.CONSTELLA_SERVER_NAME?.trim() || os.hostname();
 const serverVersion = process.env.CONSTELLA_VERSION || process.env.npm_package_version || DEFAULT_VERSION;
