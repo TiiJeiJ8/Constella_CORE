@@ -2,7 +2,7 @@
 
 Backend service for Constella collaboration, including authentication, room management, assets, LAN discovery publishing, and Yjs relay.
 
-[中文](./README.md) | [Frontend](../web/README-en.md)
+[中文](./README.md) | [Frontend](https://github.com/TiiJeiJ8/Constella)
 
 ## Version
 
