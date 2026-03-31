@@ -2,7 +2,7 @@
 
 Constella 的后端服务，负责认证、房间与权限、资源管理、局域网发现发布，以及 Yjs 协作中继。
 
-[English](./README-en.md) | [前端](../web/README.md)
+[English](./README-en.md) | [前端](https://github.com/TiiJeiJ8/Constella)
 
 ## 版本
 
