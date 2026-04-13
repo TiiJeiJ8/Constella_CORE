@@ -255,6 +255,7 @@ export class RoomService {
                 userRole = userMember ? userMember.role : null;
             }
 
+
             // 移除密码字段
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
