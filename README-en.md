@@ -10,7 +10,7 @@ Backend service for Constella collaboration, including authentication, room mana
 
 ## Runtime Requirements
 
-- Node.js: `>=20.19.0 || >=22.12.0`
+- Node.js: `22.12.0` (This applies to standalone server deployment; the Electron desktop app bundles its own Node runtime)
 - npm: `>=9`
 
 > [!NOTE]
