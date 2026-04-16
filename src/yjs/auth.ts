@@ -9,6 +9,8 @@ import logger from '../config/logger';
 export interface RelayTokenPayload {
     room_id: string;
     user_id: string;
+    role?: string;
+    can_write?: boolean;
     exp: number;
 }
 
@@ -57,6 +59,8 @@ export function verifyRelayToken(
                 return {
                     room_id: actualRoomId,
                     user_id: 'dev-user',
+                    role: 'owner',
+                    can_write: true,
                     exp: Math.floor(Date.now() / 1000) + 3600,
                 };
             }
@@ -69,6 +73,8 @@ export function verifyRelayToken(
                 return {
                     room_id: roomId.split(':')[1],
                     user_id: 'test-user',
+                    role: 'owner',
+                    can_write: true,
                     exp: Math.floor(Date.now() / 1000) + 3600,
                 };
             }

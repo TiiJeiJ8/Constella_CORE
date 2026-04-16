@@ -1,4 +1,4 @@
-import { Request, Response, NextFunction } from 'express';
+﻿import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
@@ -91,6 +91,11 @@ export class AssetController {
                 return;
             }
 
+            if (member.role === RoomRole.VIEWER) {
+                res.status(403).json(errorResponse('Access denied: viewer cannot upload assets', 403));
+                return;
+            }
+
             const file = (req as any).file;
             if (!file) {
                 res.status(400).json(errorResponse('No file uploaded', 400));
@@ -171,7 +176,6 @@ export class AssetController {
                 res.status(403).json(errorResponse('Access denied: not a room member', 403));
                 return;
             }
-
             const isAdmin = member.role === RoomRole.OWNER || member.role === RoomRole.ADMIN;
             const roomDir = path.join(ASSETS_DIR, roomId);
 
@@ -276,3 +280,4 @@ export class AssetController {
 }
 
 export const assetController = new AssetController();
+

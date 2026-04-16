@@ -2,7 +2,7 @@ import app from './app';
 import { config } from './config';
 import logger from './config/logger';
 import { db } from './config/database';
-import { YjsWebSocketServer, createPersistence } from './yjs';
+import { YjsWebSocketServer, createPersistence, setYjsWebSocketServer } from './yjs';
 import { startLanDiscoveryPublisher, stopLanDiscoveryPublisher } from './discovery';
 import { startDatabaseMaintenance } from './maintenance';
 
@@ -30,6 +30,7 @@ const startServer = async () => {
             pingInterval: config.websocket.pingInterval,
             persistence: yjsPersistence,
         });
+        setYjsWebSocketServer(yjsServer);
         logger.info(`YJS WebSocket server initialized at ${config.websocket.path}`);
         const maintenance = startDatabaseMaintenance();
 

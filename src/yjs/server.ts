@@ -15,6 +15,18 @@ const wsReadyStateOpen = 1;
 // 消息类型常量
 const messageSync = 0;
 const messageAwareness = 1;
+const messageRoomEvent = 4;
+const syncMessageStep2 = 1;
+const syncMessageUpdate = 2;
+
+export interface RoomRealtimeEvent {
+    type: 'room_permissions_updated';
+    roomId: string;
+    targetUserId: string;
+    memberId: string;
+    role: string;
+    actorUserId: string;
+}
 
 /**
  * WebSocket 连接信息
@@ -114,6 +126,7 @@ export class YjsWebSocketServer {
                 ws as WebSocket & {
                     roomId: string;
                     userId: string;
+                    canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
             ).roomId = roomId;
@@ -121,6 +134,7 @@ export class YjsWebSocketServer {
                 ws as WebSocket & {
                     roomId: string;
                     userId: string;
+                    canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
             ).userId = tokenPayload.user_id;
@@ -128,6 +142,15 @@ export class YjsWebSocketServer {
                 ws as WebSocket & {
                     roomId: string;
                     userId: string;
+                    canWrite: boolean;
+                    tokenPayload: RelayTokenPayload;
+                }
+            ).canWrite = tokenPayload.can_write !== false;
+            (
+                ws as WebSocket & {
+                    roomId: string;
+                    userId: string;
+                    canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
             ).tokenPayload = tokenPayload;
@@ -320,6 +343,14 @@ export class YjsWebSocketServer {
             switch (messageType) {
                 case messageSync: {
                     logger.debug(`[Yjs] Processing sync message for room: ${wsDoc.name}`);
+                    const syncTypeDecoder = decoding.createDecoder(message);
+                    decoding.readVarUint(syncTypeDecoder);
+                    const syncSubtype = decoding.readVarUint(syncTypeDecoder);
+                    const canWrite = (conn as WebSocket & { canWrite?: boolean }).canWrite !== false;
+                    if (!canWrite && (syncSubtype === syncMessageStep2 || syncSubtype === syncMessageUpdate)) {
+                        logger.warn(`Blocked read-only sync update in room ${wsDoc.name}`);
+                        return;
+                    }
 
                     // Sync protocol 消息
                     encoding.writeVarUint(encoder, messageSync);
@@ -354,6 +385,22 @@ export class YjsWebSocketServer {
 
                     // Awareness 消息
                     const update = decoding.readVarUint8Array(decoder);
+                    const awarenessDecoder = decoding.createDecoder(update);
+                    const controlledIds = wsDoc.conns.get(conn);
+                    const updateCount = decoding.readVarUint(awarenessDecoder);
+
+                    if (controlledIds) {
+                        for (let index = 0; index < updateCount; index += 1) {
+                            const clientId = decoding.readVarUint(awarenessDecoder);
+                            controlledIds.add(clientId);
+                            decoding.readVarUint(awarenessDecoder);
+                            const state = JSON.parse(decoding.readVarString(awarenessDecoder));
+                            if (state === null) {
+                                controlledIds.delete(clientId);
+                            }
+                        }
+                    }
+
                     awarenessProtocol.applyAwarenessUpdate(
                         wsDoc.awareness,
                         update,
@@ -412,6 +459,22 @@ export class YjsWebSocketServer {
                 }
             });
         }
+    }
+
+    broadcastRoomEvent(roomId: string, event: RoomRealtimeEvent): void {
+        const wsDoc = this.docs.get(roomId);
+        if (!wsDoc || wsDoc.conns.size === 0) {
+            return;
+        }
+
+        const encoder = encoding.createEncoder();
+        encoding.writeVarUint(encoder, messageRoomEvent);
+        encoding.writeVarString(encoder, JSON.stringify(event));
+        const message = encoding.toUint8Array(encoder);
+
+        wsDoc.conns.forEach((_, conn) => {
+            this.send(conn, message);
+        });
     }
 
     /**

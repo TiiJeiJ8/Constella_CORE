@@ -6,6 +6,7 @@
 export enum RoomRole {
     OWNER = 'owner',
     ADMIN = 'admin',
+    EDITOR = 'editor',
     MEMBER = 'member',
     VIEWER = 'viewer',
 }
@@ -14,7 +15,7 @@ export enum RoomRole {
 
 // 权限与访问控制
 export interface PermissionSettings {
-    defaultRole?: 'member' | 'viewer';
+    defaultRole?: 'editor' | 'member' | 'viewer';
     allowAnonymous?: boolean;
     requireApproval?: boolean;
     allowInvite?: boolean;

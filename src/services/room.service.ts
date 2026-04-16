@@ -1,5 +1,7 @@
-import bcrypt from 'bcryptjs';
+﻿import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import path from 'path';
+import fs from 'fs/promises';
 import { RoomModel } from '../models/room.model';
 import { RoomMemberModel } from '../models/roomMember.model';
 import { UserModel } from '../models/user.model';
@@ -7,12 +9,8 @@ import { RoomRole } from '../types/database';
 import { config } from '../config';
 import logger from '../config/logger';
 import { AppError } from '../utils/appError';
-import path from 'path';
-import fs from 'fs/promises';
+import { getYjsWebSocketServer } from '../yjs';
 
-/**
- * 创建房间参数
- */
 interface CreateRoomParams {
     name: string;
     description?: string;
@@ -22,18 +20,12 @@ interface CreateRoomParams {
     owner_id: string;
 }
 
-/**
- * 加入房间参数
- */
 interface JoinRoomParams {
     room_id: string;
     user_id: string;
     password?: string;
 }
 
-/**
- * 邀请用户参数
- */
 interface InviteUserParams {
     room_id: string;
     inviter_id: string;
@@ -41,9 +33,6 @@ interface InviteUserParams {
     role?: RoomRole;
 }
 
-/**
- * 更新权限参数
- */
 interface UpdatePermissionsParams {
     room_id: string;
     requester_id: string;
@@ -51,31 +40,97 @@ interface UpdatePermissionsParams {
     new_role: RoomRole;
 }
 
-/**
- * Relay Token Payload
- */
 interface RelayTokenPayload {
     room_id: string;
     user_id: string;
+    role?: RoomRole;
+    can_write?: boolean;
 }
 
-/**
- * 房间服务
- */
+interface RoomCapabilities {
+    can_view: boolean;
+    can_edit: boolean;
+    can_manage_members: boolean;
+    can_manage_room: boolean;
+    can_upload_assets: boolean;
+    can_manage_snapshots: boolean;
+    can_delete_room: boolean;
+}
+
 export class RoomService {
-    /**
-     * 创建新房间
-     */
+    private getDefaultJoinRole(room: { settings?: any | null }): RoomRole {
+        const configuredRole = room?.settings?.permissions?.defaultRole;
+        return this.normalizeRole(configuredRole) || RoomRole.EDITOR;
+    }
+
+    private normalizeRole(role: RoomRole | string | null | undefined): RoomRole | null {
+        if (!role) {
+            return null;
+        }
+
+        if (role === RoomRole.MEMBER || role === 'member') {
+            return RoomRole.EDITOR;
+        }
+
+        if (role === RoomRole.OWNER || role === RoomRole.ADMIN || role === RoomRole.EDITOR || role === RoomRole.VIEWER) {
+            return role;
+        }
+
+        return null;
+    }
+
+    private buildCapabilities(role: RoomRole | string | null): RoomCapabilities {
+        const normalizedRole = this.normalizeRole(role);
+        const canView = normalizedRole !== null;
+        const canEdit = normalizedRole === RoomRole.OWNER || normalizedRole === RoomRole.ADMIN || normalizedRole === RoomRole.EDITOR;
+
+        return {
+            can_view: canView,
+            can_edit: canEdit,
+            can_manage_members: normalizedRole === RoomRole.OWNER || normalizedRole === RoomRole.ADMIN,
+            can_manage_room: normalizedRole === RoomRole.OWNER || normalizedRole === RoomRole.ADMIN,
+            can_upload_assets: canEdit,
+            can_manage_snapshots: normalizedRole === RoomRole.OWNER || normalizedRole === RoomRole.ADMIN,
+            can_delete_room: normalizedRole === RoomRole.OWNER,
+        };
+    }
+
+    private async getUserRole(roomId: string, userId?: string): Promise<RoomRole | null> {
+        if (!userId) {
+            return null;
+        }
+
+        const membership = await RoomMemberModel.findByRoomAndUser(roomId, userId);
+        return this.normalizeRole(membership?.role || null);
+    }
+
+    private canAccessRoom(room: { is_private: boolean }, role: RoomRole | null): boolean {
+        return !room.is_private || role !== null;
+    }
+
+    private getJoinPreview(room: { id: string; name: string; description?: string | null; is_private: boolean; settings?: unknown; owner_id: string; created_at: Date; updated_at: Date }, memberCount: number, userRole: RoomRole | null) {
+        return {
+            id: room.id,
+            name: room.name,
+            description: room.description || '',
+            is_private: room.is_private,
+            owner_id: room.owner_id,
+            created_at: room.created_at,
+            updated_at: room.updated_at,
+            member_count: memberCount,
+            user_role: userRole,
+            capabilities: this.buildCapabilities(userRole),
+            access_scope: userRole ? 'member' : 'preview',
+        };
+    }
+
     async createRoom(params: CreateRoomParams) {
         try {
-            // 如果是私有房间且有密码，对密码进行哈希
             let hashedPassword = null;
             if (params.is_private && params.password) {
-                const saltRounds = 10;
-                hashedPassword = await bcrypt.hash(params.password, saltRounds);
+                hashedPassword = await bcrypt.hash(params.password, 10);
             }
 
-            // 创建房间
             const room = await RoomModel.create({
                 name: params.name,
                 description: params.description,
@@ -85,33 +140,31 @@ export class RoomService {
                 owner_id: params.owner_id,
             });
 
-            // 自动将创建者添加为房间成员（owner角色）
             await RoomMemberModel.create({
                 room_id: room.id,
                 user_id: params.owner_id,
                 role: RoomRole.OWNER,
             });
 
-            // 返回时不包含密码
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { password, ...roomWithoutPassword } = room;
 
-            return { room: roomWithoutPassword };
+            return {
+                room: roomWithoutPassword,
+                user_role: RoomRole.OWNER,
+                capabilities: this.buildCapabilities(RoomRole.OWNER),
+            };
         } catch (error) {
             logger.error('Error creating room:', error);
             throw error;
         }
     }
 
-    /**
-     * 获取房间列表（支持分页和按用户过滤）
-     */
     async getRooms(filterUserId?: string, currentUserId?: string, limit = 50, offset = 0) {
         try {
             let rooms;
 
             if (filterUserId) {
-                // 获取用户参与的所有房间
                 const members = await RoomMemberModel.findByUserId(filterUserId);
                 const roomIds = members.map((m) => m.room_id);
 
@@ -122,30 +175,19 @@ export class RoomService {
                 rooms = await Promise.all(roomIds.map((id) => RoomModel.findById(id)));
                 rooms = rooms.filter((r) => r !== null);
             } else {
-                // 获取所有公开房间
                 rooms = await RoomModel.findPublicRooms(limit, offset);
             }
 
-            // 为每个房间添加额外信息
             const enrichedRooms = await Promise.all(
                 rooms.map(async (room) => {
                     if (!room) return null;
 
-                    // 获取房主信息
                     const owner = await UserModel.findById(room.owner_id);
-
-                    // 获取成员数量
                     const members = await RoomMemberModel.findByRoomId(room.id);
-                    const member_count = members.length;
+                    const userRole = currentUserId
+                        ? this.normalizeRole(members.find((m) => m.user_id === currentUserId)?.role || null)
+                        : null;
 
-                    // 获取当前用户角色（如果提供了 currentUserId）
-                    let user_role = null;
-                    if (currentUserId) {
-                        const membership = members.find((m) => m.user_id === currentUserId);
-                        user_role = membership ? membership.role : null;
-                    }
-
-                    // 移除密码字段
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { password, ...roomData } = room;
 
@@ -158,8 +200,9 @@ export class RoomService {
                                 email: owner.email,
                             }
                             : null,
-                        member_count,
-                        user_role,
+                        member_count: members.length,
+                        user_role: userRole,
+                        capabilities: this.buildCapabilities(userRole),
                     };
                 })
             );
@@ -176,34 +219,22 @@ export class RoomService {
         }
     }
 
-    /**
-     * 获取所有房间（公开+私密）
-     */
     async getAllRooms(currentUserId?: string, limit = 50, offset = 0) {
         try {
-            // 获取所有房间（不过滤is_private）
             const rooms = await RoomModel.findAllRooms(limit, offset);
 
-            // 为每个房间添加额外信息
             const enrichedRooms = await Promise.all(
                 rooms.map(async (room) => {
                     if (!room) return null;
 
-                    // 获取房主信息
-                    const owner = await UserModel.findById(room.owner_id);
-
-                    // 获取成员数量
-                    const members = await RoomMemberModel.findByRoomId(room.id);
-                    const member_count = members.length;
-
-                    // 获取当前用户角色
-                    let user_role = null;
-                    if (currentUserId) {
-                        const membership = members.find((m) => m.user_id === currentUserId);
-                        user_role = membership ? membership.role : null;
+                    const userRole = await this.getUserRole(room.id, currentUserId);
+                    if (!this.canAccessRoom(room, userRole)) {
+                        return null;
                     }
 
-                    // 移除密码字段
+                    const owner = await UserModel.findById(room.owner_id);
+                    const members = await RoomMemberModel.findByRoomId(room.id);
+
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { password, ...roomData } = room;
 
@@ -216,8 +247,9 @@ export class RoomService {
                                 email: owner.email,
                             }
                             : null,
-                        member_count,
-                        user_role,
+                        member_count: members.length,
+                        user_role: userRole,
+                        capabilities: this.buildCapabilities(userRole),
                     };
                 })
             );
@@ -234,37 +266,40 @@ export class RoomService {
         }
     }
 
-    /**
-     * 获取房间详情（含权限概览）
-     */
     async getRoomById(roomId: string, userId?: string) {
         try {
             const room = await RoomModel.findById(roomId);
-
             if (!room) {
                 throw new AppError('Room not found', 404);
             }
 
-            // 获取房间成员
-            const members = await RoomMemberModel.findByRoomId(roomId);
-
-            // 查找当前用户的权限
-            let userRole = null;
-            if (userId) {
-                const userMember = members.find((m) => m.user_id === userId);
-                userRole = userMember ? userMember.role : null;
+            const userRole = await this.getUserRole(roomId, userId);
+            if (!this.canAccessRoom(room, userRole)) {
+                throw new AppError('Access denied', 403);
             }
 
+            const members = await RoomMemberModel.findByRoomId(roomId);
+            const memberCount = members.length;
 
-            // 移除密码字段
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { password, ...roomWithoutPassword } = room;
 
+            if (!userRole) {
+                return {
+                    room: this.getJoinPreview(roomWithoutPassword, memberCount, null),
+                    members: memberCount,
+                    user_role: null,
+                    capabilities: this.buildCapabilities(null),
+                    access_scope: 'preview',
+                };
+            }
+
             return {
                 room: roomWithoutPassword,
-                members: members.length,
+                members: memberCount,
                 user_role: userRole,
+                capabilities: this.buildCapabilities(userRole),
+                access_scope: 'member',
             };
         } catch (error) {
             logger.error('Error getting room by id:', error);
@@ -272,26 +307,67 @@ export class RoomService {
         }
     }
 
-    /**
-     * 加入房间
-     */
+    async getRoomMembers(roomId: string, requesterId?: string) {
+        try {
+            const requesterRole = await this.getUserRole(roomId, requesterId);
+            if (!requesterRole) {
+                throw new AppError('Access denied', 403);
+            }
+
+            const members = await RoomMemberModel.findByRoomId(roomId);
+            const detailedMembers = await RoomMemberModel.findDetailedByRoomId(roomId);
+            const detailedByMemberId = new Map(detailedMembers.map((member) => [member.id, member]));
+
+            const enrichedMembers = await Promise.all(
+                members.map(async (member) => {
+                    const detailedMember = detailedByMemberId.get(member.id);
+                    const fallbackUser = detailedMember?.username ? null : await UserModel.findById(member.user_id);
+                    const username = detailedMember?.username || fallbackUser?.username || '';
+                    const email = detailedMember?.email || fallbackUser?.email || '';
+
+                    return {
+                        id: member.id,
+                        room_id: member.room_id,
+                        user_id: member.user_id,
+                        role: this.normalizeRole(member.role) || RoomRole.EDITOR,
+                        joined_at: member.joined_at,
+                        user: username || email
+                            ? {
+                                id: member.user_id,
+                                username: username || member.user_id,
+                                email: email || undefined,
+                            }
+                            : null,
+                    };
+                })
+            );
+
+            return {
+                members: enrichedMembers,
+                total: enrichedMembers.length,
+                requester_role: requesterRole,
+                capabilities: this.buildCapabilities(requesterRole),
+            };
+        } catch (error) {
+            logger.error('Error getting room members:', error);
+            throw error;
+        }
+    }
+
     async joinRoom(params: JoinRoomParams) {
         try {
             const { room_id, user_id, password } = params;
 
-            // 检查房间是否存在
             const room = await RoomModel.findById(room_id);
             if (!room) {
                 throw new AppError('Room not found', 404);
             }
 
-            // 检查用户是否已经是成员
             const existingMember = await RoomMemberModel.findByRoomAndUser(room_id, user_id);
             if (existingMember) {
                 throw new AppError('User is already a member of this room', 409);
             }
 
-            // 如果是私有房间，验证密码
             if (room.is_private && room.password) {
                 if (!password) {
                     throw new AppError('Password required for private room', 400);
@@ -303,28 +379,33 @@ export class RoomService {
                 }
             }
 
-            // 添加用户为成员
+            const defaultJoinRole = this.getDefaultJoinRole(room);
             const member = await RoomMemberModel.create({
                 room_id,
                 user_id,
-                role: RoomRole.MEMBER,
+                role: defaultJoinRole,
             });
 
-            return { member };
+            const normalizedRole = this.normalizeRole(member.role) || defaultJoinRole;
+
+            return {
+                member: {
+                    ...member,
+                    role: normalizedRole,
+                },
+                user_role: normalizedRole,
+                capabilities: this.buildCapabilities(normalizedRole),
+            };
         } catch (error) {
             logger.error('Error joining room:', error);
             throw error;
         }
     }
 
-    /**
-     * 邀请用户加入房间（房主或管理员权限）
-     */
     async inviteUser(params: InviteUserParams) {
         try {
             const { room_id, inviter_id, email, role } = params;
 
-            // 验证邀请者权限
             const inviterMember = await RoomMemberModel.findByRoomAndUser(room_id, inviter_id);
             if (!inviterMember) {
                 throw new AppError('Inviter is not a member of this room', 403);
@@ -334,92 +415,108 @@ export class RoomService {
                 throw new AppError('Only owners and admins can invite users', 403);
             }
 
-            // 查找被邀请用户
             const invitedUser = await UserModel.findByEmail(email);
             if (!invitedUser) {
                 throw new AppError('User not found', 404);
             }
 
-            // 检查用户是否已经是成员
             const existingMember = await RoomMemberModel.findByRoomAndUser(room_id, invitedUser.id);
             if (existingMember) {
                 throw new AppError('User is already a member of this room', 409);
             }
 
-            // 添加用户为成员
             const member = await RoomMemberModel.create({
                 room_id,
                 user_id: invitedUser.id,
-                role: role || RoomRole.MEMBER,
+                role: this.normalizeRole(role || RoomRole.EDITOR) || RoomRole.EDITOR,
             });
 
-            return { member };
+            return {
+                member: {
+                    ...member,
+                    role: this.normalizeRole(member.role) || RoomRole.EDITOR,
+                }
+            };
         } catch (error) {
             logger.error('Error inviting user:', error);
             throw error;
         }
     }
 
-    /**
-     * 更新成员权限（房主或管理员权限）
-     */
     async updatePermissions(params: UpdatePermissionsParams) {
         try {
             const { room_id, requester_id, member_id, new_role } = params;
 
-            // 验证请求者权限
             const requesterMember = await RoomMemberModel.findByRoomAndUser(room_id, requester_id);
             if (!requesterMember) {
                 throw new AppError('Requester is not a member of this room', 403);
             }
 
-            if (
-                requesterMember.role !== RoomRole.OWNER &&
-                requesterMember.role !== RoomRole.ADMIN
-            ) {
+            const requesterRole = this.normalizeRole(requesterMember.role);
+            if (requesterRole !== RoomRole.OWNER && requesterRole !== RoomRole.ADMIN) {
                 throw new AppError('Only owners and admins can update permissions', 403);
             }
 
-            // 查找目标成员
             const targetMember = await RoomMemberModel.findById(member_id);
             if (!targetMember || targetMember.room_id !== room_id) {
                 throw new AppError('Member not found in this room', 404);
             }
 
-            // 不允许修改房主权限（除非自己是房主）
-            if (targetMember.role === RoomRole.OWNER && requesterMember.role !== RoomRole.OWNER) {
+            const targetRole = this.normalizeRole(targetMember.role);
+            const nextRole = this.normalizeRole(new_role);
+
+            if (!nextRole) {
+                throw new AppError('Invalid role', 400);
+            }
+
+            if (targetRole === RoomRole.OWNER && requesterRole !== RoomRole.OWNER) {
                 throw new AppError('Cannot modify owner permissions', 403);
             }
 
-            // 更新权限
-            const updatedMember = await RoomMemberModel.updateRole(member_id, new_role);
+            if (requesterRole === RoomRole.ADMIN) {
+                if (targetRole === RoomRole.ADMIN || nextRole === RoomRole.ADMIN || targetRole === RoomRole.OWNER || nextRole === RoomRole.OWNER) {
+                    throw new AppError('Admins can only manage editors and viewers', 403);
+                }
+            }
 
-            return { member: updatedMember };
+            const updatedMember = await RoomMemberModel.updateRole(member_id, nextRole);
+
+            getYjsWebSocketServer()?.broadcastRoomEvent(room_id, {
+                type: 'room_permissions_updated',
+                roomId: room_id,
+                targetUserId: targetMember.user_id,
+                memberId: member_id,
+                role: nextRole,
+                actorUserId: requester_id,
+            });
+
+            return {
+                member: updatedMember
+                    ? {
+                        ...updatedMember,
+                        role: this.normalizeRole(updatedMember.role) || nextRole,
+                    }
+                    : updatedMember
+            };
         } catch (error) {
             logger.error('Error updating permissions:', error);
             throw error;
         }
     }
 
-    /**
-     * 删除房间（仅房主可删除）
-     */
     async deleteRoom(params: { room_id: string; user_id: string; password?: string }) {
         try {
             const { room_id, user_id, password } = params;
 
-            // 获取房间信息
             const room = await RoomModel.findById(room_id);
             if (!room) {
                 throw new AppError('Room not found', 404);
             }
 
-            // 验证是否是房主
             if (room.owner_id !== user_id) {
                 throw new AppError('Only room owner can delete the room', 403);
             }
 
-            // 如果是私密房间，验证密码
             if (room.is_private && room.password) {
                 if (!password) {
                     throw new AppError('Password required for private room', 400);
@@ -431,7 +528,6 @@ export class RoomService {
                 }
             }
 
-            // 删除房间（CASCADE 会自动删除关联的成员记录）
             const deleted = await RoomModel.delete(room_id);
             if (!deleted) {
                 throw new AppError('Failed to delete room', 500);
@@ -439,7 +535,6 @@ export class RoomService {
 
             logger.info(`Room ${room_id} deleted by user ${user_id}`);
 
-            // 尝试删除房间上传的资源目录（如果存在）
             try {
                 const assetsDir = path.join(process.cwd(), 'uploads', 'assets', room_id);
                 await fs.rm(assetsDir, { recursive: true, force: true });
@@ -455,30 +550,32 @@ export class RoomService {
         }
     }
 
-    /**
-     * 生成短期 Relay Token（用于 WSS 连接）
-     */
     async generateRelayToken(params: RelayTokenPayload) {
         try {
             const { room_id, user_id } = params;
 
-            // 验证用户是否是房间成员
             const member = await RoomMemberModel.findByRoomAndUser(room_id, user_id);
             if (!member) {
                 throw new AppError('User is not a member of this room', 403);
             }
 
-            // 生成短期 token（15分钟过期）
+            const capabilities = this.buildCapabilities(member.role);
             const payload: RelayTokenPayload = {
                 room_id,
                 user_id,
+                role: this.normalizeRole(member.role) || RoomRole.EDITOR,
+                can_write: capabilities.can_edit,
             };
 
             const token = jwt.sign(payload, config.jwt.secret, {
                 expiresIn: '15m',
             });
 
-            return { relay_token: token };
+            return {
+                relay_token: token,
+                user_role: this.normalizeRole(member.role) || RoomRole.EDITOR,
+                capabilities,
+            };
         } catch (error) {
             logger.error('Error generating relay token:', error);
             throw error;
@@ -487,3 +584,4 @@ export class RoomService {
 }
 
 export const roomService = new RoomService();
+

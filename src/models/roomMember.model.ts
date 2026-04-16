@@ -7,6 +7,29 @@ import logger from '../config/logger';
  * 房间成员模型 - 处理房间成员关系的 CRUD 操作
  */
 export class RoomMemberModel {
+    static async findDetailedByRoomId(roomId: string): Promise<Array<RoomMember & {
+        username?: string | null;
+        email?: string | null;
+    }>> {
+        const query = `
+      SELECT
+        rm.*,
+        u.username,
+        u.email
+      FROM room_members rm
+      LEFT JOIN users u ON u.id = rm.user_id
+      WHERE rm.room_id = $1
+      ORDER BY rm.joined_at ASC
+    `;
+
+        try {
+            const result = await db.query<RoomMember & { username?: string | null; email?: string | null }>(query, [roomId]);
+            return result.rows;
+        } catch (error) {
+            logger.error('Error finding detailed room members:', error);
+            throw error;
+        }
+    }
     /**
      * 添加房间成员
      */
@@ -23,7 +46,7 @@ export class RoomMemberModel {
                 memberId,
                 params.room_id,
                 params.user_id,
-                params.role || RoomRole.MEMBER,
+                params.role || RoomRole.EDITOR,
             ]);
 
             return result.rows[0];
