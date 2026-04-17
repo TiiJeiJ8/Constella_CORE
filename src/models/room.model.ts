@@ -132,7 +132,7 @@ export class RoomModel {
      * 更新房间信息
      */
     static async update(id: string, updates: Partial<Room>): Promise<Room | null> {
-        const allowedFields = ['name', 'description', 'is_private', 'password', 'settings'];
+        const allowedFields = ['name', 'description', 'is_private', 'password', 'settings', 'owner_id'];
         const fields: string[] = [];
         const values: any[] = [];
         let paramIndex = 1;

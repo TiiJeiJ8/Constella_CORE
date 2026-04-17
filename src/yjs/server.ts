@@ -20,11 +20,11 @@ const syncMessageStep2 = 1;
 const syncMessageUpdate = 2;
 
 export interface RoomRealtimeEvent {
-    type: 'room_permissions_updated';
+    type: 'room_permissions_updated' | 'room_members_updated' | 'room_ownership_transferred' | 'room_settings_updated';
     roomId: string;
     targetUserId: string;
     memberId: string;
-    role: string;
+    role?: string;
     actorUserId: string;
 }
 

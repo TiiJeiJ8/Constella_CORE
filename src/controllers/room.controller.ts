@@ -106,6 +106,38 @@ export class RoomController {
         }
     }
 
+    async updateRoomSettings(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+            const { name, description, is_private, settings } = req.body
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.updateRoomSettings({
+                room_id: id,
+                requester_id: requesterId,
+                name,
+                description,
+                is_private,
+                settings,
+            })
+
+            res.status(200).json(successResponse(result, 'Room settings updated successfully'))
+        } catch (error) {
+            logger.error('Update room settings error:', error)
+            next(error)
+        }
+    }
+
     async joinRoom(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { id } = req.params
@@ -211,6 +243,103 @@ export class RoomController {
             res.status(200).json(successResponse(result, 'Permissions updated successfully'))
         } catch (error) {
             logger.error('Update permissions error:', error)
+            next(error)
+        }
+    }
+
+    async updateMemberRole(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id, memberId } = req.params
+            const { role, new_role } = req.body
+            const requesterId = req.user?.userId
+            const nextRole = role || new_role
+
+            if (!id || !memberId) {
+                res.status(400).json(errorResponse('Room ID and member ID are required', 400))
+                return
+            }
+
+            if (!nextRole) {
+                res.status(400).json(errorResponse('New role is required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            if (!Object.values(RoomRole).includes(nextRole)) {
+                res.status(400).json(errorResponse('Invalid role', 400))
+                return
+            }
+
+            const result = await roomService.updateMemberRole({
+                room_id: id,
+                requester_id: requesterId,
+                member_id: memberId,
+                new_role: nextRole,
+            })
+
+            res.status(200).json(successResponse(result, 'Member role updated successfully'))
+        } catch (error) {
+            logger.error('Update member role error:', error)
+            next(error)
+        }
+    }
+
+    async removeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id, memberId } = req.params
+            const requesterId = req.user?.userId
+
+            if (!id || !memberId) {
+                res.status(400).json(errorResponse('Room ID and member ID are required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.removeMember({
+                room_id: id,
+                requester_id: requesterId,
+                member_id: memberId,
+            })
+
+            res.status(200).json(successResponse(result, 'Member removed successfully'))
+        } catch (error) {
+            logger.error('Remove member error:', error)
+            next(error)
+        }
+    }
+
+    async transferOwnership(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id, memberId } = req.params
+            const requesterId = req.user?.userId
+
+            if (!id || !memberId) {
+                res.status(400).json(errorResponse('Room ID and member ID are required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.transferOwnership({
+                room_id: id,
+                requester_id: requesterId,
+                member_id: memberId,
+            })
+
+            res.status(200).json(successResponse(result, 'Ownership transferred successfully'))
+        } catch (error) {
+            logger.error('Transfer ownership error:', error)
             next(error)
         }
     }
