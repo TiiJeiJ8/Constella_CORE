@@ -41,6 +41,7 @@ interface PermissionSettings {
 ```
 
 **使用场景：**
+
 - 公开演示房间：`{ defaultRole: 'viewer', allowAnonymous: true }`
 - 私密团队空间：`{ requireApproval: true, allowInvite: false }`
 
@@ -64,6 +65,7 @@ interface CanvasSettings {
 ```
 
 **使用场景：**
+
 - 设计协作：`{ gridEnabled: true, snapToGrid: true, gridSize: 10 }`
 - 自由绘画：`{ gridEnabled: false, backgroundColor: '#f5f5f5' }`
 
@@ -85,6 +87,7 @@ interface CollaborationSettings {
 ```
 
 **使用场景：**
+
 - 专注模式：`{ enableChat: false, enableCursor: false }`
 - 完整协作：`{ enableComments: true, enableChat: true, enableCursor: true }`
 
@@ -105,6 +108,7 @@ interface VersioningSettings {
 ```
 
 **使用场景：**
+
 - 重要文档：`{ autoSave: true, saveInterval: 10, keepHistory: true, maxHistoryDays: 90 }`
 - 临时草稿：`{ keepHistory: false, autoSave: true, saveInterval: 60 }`
 
@@ -125,6 +129,7 @@ interface AppearanceSettings {
 ```
 
 **使用场景：**
+
 - 品牌定制：`{ accentColor: '#ff6b6b', icon: '🎨' }`
 - 夜间模式：`{ theme: 'dark', backgroundColor: '#1a1a1a' }`
 
@@ -146,6 +151,7 @@ interface FeatureSettings {
 ```
 
 **使用场景：**
+
 - 限制性环境：`{ enableExport: false, allowedFileTypes: ['image/png'] }`
 - 完整功能：`{ enableAI: true, enableTemplates: true, enablePlugins: true }`
 
@@ -166,6 +172,7 @@ interface NotificationSettings {
 ```
 
 **使用场景：**
+
 - 安静模式：`{ mentionNotify: true, editNotify: false, commentNotify: false }`
 - 全通知：`{ mentionNotify: true, editNotify: true, emailDigest: true, digestFrequency: 'daily' }`
 
@@ -186,6 +193,7 @@ interface MetadataSettings {
 ```
 
 **使用场景：**
+
 - 项目管理：`{ tags: ['sprint-1', 'ui-design'], category: 'design', priority: 'high' }`
 - 归档管理：`{ archived: true, tags: ['completed'] }`
 
@@ -415,6 +423,131 @@ Content-Type: application/json
 
 ---
 
+## 房间安全指南
+
+本指南聚焦私密房间（`is_private = true`）的安全建设，目标是降低未授权访问、暴力破解、误授权和数据泄露风险。
+
+### 1. 威胁模型
+
+重点防御以下风险：
+
+1. 密码过弱或被暴力尝试。
+2. 非成员绕过鉴权访问私密房间。
+3. 角色配置错误导致越权操作。
+4. 开发/测试环境中安全策略被意外放宽。
+5. 缺少审计信息导致事后无法追踪。
+
+### 2. 私密房间配置基线
+
+建议将以下配置作为默认安全基线：
+
+```json
+{
+    "is_private": true,
+    "permissions": {
+        "defaultRole": "viewer",
+        "allowAnonymous": false,
+        "requireApproval": true,
+        "allowInvite": false
+    },
+    "features": {
+        "enableExport": false,
+        "enablePlugins": false
+    },
+    "versioning": {
+        "autoSave": true,
+        "keepHistory": true,
+        "maxHistoryDays": 30
+    }
+}
+```
+
+说明：
+
+1. `defaultRole = viewer`：新成员默认只读，降低误操作与越权风险。
+2. `allowAnonymous = false`：禁止匿名访问私密房间。
+3. `requireApproval = true`：成员加入需审批。
+4. `allowInvite = false`：由管理员集中控制成员扩散。
+5. `enableExport = false`：私密协作场景下优先防止数据外流。
+
+### 3. 密码策略
+
+私密房间密码建议满足：
+
+1. 最小长度 8。
+2. 同时包含大小写字母、数字、特殊字符。
+3. 禁止使用房间名、用户名、常见弱口令。
+4. 每 90 天轮换一次高敏感房间密码。
+5. 连续失败尝试应触发限流或临时锁定。
+
+### 4. 访问控制策略
+
+建议角色最小权限化：
+
+1. OWNER：仅限房间所有者，数量应尽量少。
+2. ADMIN：负责成员管理，不应默认拥有删除房间权限。
+3. EDITOR：仅在确有编辑需求时授予。
+4. VIEWER：默认角色。
+
+推荐流程：
+
+1. 新成员先以 `viewer` 加入。
+2. 根据任务时限临时提升为 `editor`。
+3. 任务完成后降权回 `viewer`。
+
+### 5. 鉴权与会话要求
+
+1. HTTP API 与实时协作连接需统一鉴权。
+2. 对私密房间，服务端必须校验用户成员关系，而不仅校验房间 ID。
+3. 访问令牌过期时间建议短周期（如 1h），刷新令牌可中周期（如 7d）。
+4. 登出时应撤销刷新令牌，避免旧会话复用。
+
+### 6. 审计日志要求
+
+建议至少记录以下安全事件：
+
+1. 登录成功/失败（含来源 IP、设备信息、时间戳）。
+2. 私密房间密码验证失败。
+3. 成员加入、移除、角色变更。
+4. 房间隐私状态切换（公开/私密）。
+5. 导出、删除、分享等高风险操作。
+
+日志实践：
+
+1. 敏感字段脱敏（例如密码、token、cookie）。
+2. 日志保留周期不少于 90 天。
+3. 高风险事件可配置告警。
+
+### 7. 开发与部署安全
+
+1. 开发环境不要绕过私密房间鉴权逻辑。
+2. 测试数据与生产数据严格隔离。
+3. 环境变量与密钥不要写入仓库。
+4. 生产环境开启 HTTPS 与安全响应头。
+5. 定期进行依赖漏洞扫描。
+
+### 8. 事件响应流程
+
+若发现疑似私密房间泄露：
+
+1. 立即轮换房间密码并撤销可疑会话。
+2. 审查最近成员变更和高风险操作日志。
+3. 临时将房间权限降级为只读模式。
+4. 评估影响范围并通知相关成员。
+5. 完成复盘并更新配置基线。
+
+### 9. 上线前安全核查清单
+
+- 私密房间默认开启密码保护。
+- 匿名访问在私密房间中默认关闭。
+- 角色默认值为 `viewer`。
+- 已启用密码复杂度校验和失败限流。
+- 已记录关键审计事件并完成脱敏。
+- 已验证 API 与实时连接均执行成员校验。
+- 已完成开发/测试环境与生产环境隔离检查。
+
+---
+
 ## 最佳实践
 
 1. **渐进增强**：从简单配置开始，根据需要逐步添加
@@ -437,9 +570,8 @@ Content-Type: application/json
 ### 废弃配置项
 
 1. 标记为 `@deprecated`
-2. 保持至少一个主版本的兼容期
-3. 提供迁移指南
-4. 在文档中说明替代方案
+2. 保持至少一个主版本的兼容期提供迁移指南
+3. 在文档中说明替代方案
 
 ---
 
@@ -447,9 +579,4 @@ Content-Type: application/json
 
 - [数据库结构设计](./DATABASE.md)
 - [API 设计文档](./API.md)
-- [房间权限管理](./PERMISSIONS.md)（待创建）
-
----
-
-**最后更新**: 2026-01-11
-**版本**: 1.0.0
+- [房间权限管理](./PERMISSION.md)

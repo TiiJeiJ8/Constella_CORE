@@ -172,11 +172,37 @@ export class RoomService {
         };
     }
 
+    //TODO 可以考虑引入更全面的密码强度验证库
+    private validateRoomPasswordStrength(password: string): void {
+        const normalizedPassword = password.trim();
+
+        if (normalizedPassword.length < 6) {
+            throw new AppError('Password must be at least 6 characters long', 400);
+        }
+        // if (!/[a-z]/.test(normalizedPassword)) {
+        //     throw new AppError('Password must contain at least one lowercase letter', 400);
+        // }
+        // if (!/[A-Z]/.test(normalizedPassword)) {
+        //     throw new AppError('Password must contain at least one uppercase letter', 400);
+        // }
+        // if (!/[0-9]/.test(normalizedPassword)) {
+        //     throw new AppError('Password must contain at least one number', 400);
+        // }
+        // if (!/[^A-Za-z0-9]/.test(normalizedPassword)) {
+        //     throw new AppError('Password must contain at least one special character', 400);
+        // }
+    }
+
     async createRoom(params: CreateRoomParams) {
         try {
             let hashedPassword = null;
-            if (params.is_private && params.password) {
-                hashedPassword = await bcrypt.hash(params.password, 10);
+            if (params.is_private) {
+                if (!params.password || !params.password.trim()) {
+                    throw new AppError('Password is required for private rooms', 400);
+                }
+
+                this.validateRoomPasswordStrength(params.password);
+                hashedPassword = await bcrypt.hash(params.password.trim(), 10);
             }
 
             const room = await RoomModel.create({
