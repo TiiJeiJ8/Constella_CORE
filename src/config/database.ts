@@ -36,8 +36,10 @@ class MemoryStore {
      * 解析简单的 SQL INSERT 语句
      */
     executeInsert(sql: string, params: any[]): any {
+        // 兼容多行 INSERT 语句，支持跨行字段列表
+        const normalizedSql = sql.replace(/\s+/g, ' ').trim();
         // 匹配 INSERT INTO table_name (...) VALUES (...) RETURNING *
-        const match = sql.match(/INSERT INTO (\w+)\s*\((.*?)\)\s*VALUES/i);
+        const match = normalizedSql.match(/INSERT INTO (\w+)\s*\(([\s\S]*?)\)\s*VALUES/i);
         if (!match) {
             throw new Error('Unsupported INSERT query');
         }

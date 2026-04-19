@@ -50,22 +50,6 @@ export function verifyRelayToken(
     roomId?: string
 ): RelayTokenPayload | null {
     try {
-        // 开发环境：允许所有房间（无需认证）
-        if (config.env === 'development') {
-            if (roomId) {
-                logger.info(`[DEV] Allowing room without auth: ${roomId}`);
-                // 从 roomId 提取实际的 UUID（格式：room:uuid 或直接 uuid）
-                const actualRoomId = roomId.startsWith('room:') ? roomId.substring(5) : roomId;
-                return {
-                    room_id: actualRoomId,
-                    user_id: 'dev-user',
-                    role: 'owner',
-                    can_write: true,
-                    exp: Math.floor(Date.now() / 1000) + 3600,
-                };
-            }
-        }
-
         // 检查是否是测试环境的白名单房间
         if (config.env === 'test') {
             if (roomId && TEST_WHITELIST_ROOMS.includes(roomId)) {
