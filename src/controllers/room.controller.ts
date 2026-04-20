@@ -106,6 +106,31 @@ export class RoomController {
         }
     }
 
+    async getRoomAuditLogs(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+            const limit = parseInt(req.query.limit as string, 10) || 100
+            const offset = parseInt(req.query.offset as string, 10) || 0
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.getRoomAuditLogs(id, requesterId, limit, offset)
+            res.status(200).json(successResponse(result, 'Room audit logs retrieved successfully'))
+        } catch (error) {
+            logger.error('Get room audit logs error:', error)
+            next(error)
+        }
+    }
+
     async updateRoomSettings(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { id } = req.params
@@ -138,6 +163,37 @@ export class RoomController {
         }
     }
 
+    async updateRoomPassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+            const { current_password, new_password, is_private } = req.body
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.updateRoomPassword({
+                room_id: id,
+                requester_id: requesterId,
+                current_password,
+                new_password,
+                is_private,
+            })
+
+            res.status(200).json(successResponse(result, 'Room password updated successfully'))
+        } catch (error) {
+            logger.error('Update room password error:', error)
+            next(error)
+        }
+    }
+
     async joinRoom(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { id } = req.params
@@ -158,6 +214,7 @@ export class RoomController {
                 room_id: id,
                 user_id: userId,
                 password,
+                requester_key: req.ip || req.headers['x-forwarded-for']?.toString(),
             })
 
             res.status(200).json(successResponse(result, 'Joined room successfully'))
@@ -203,6 +260,67 @@ export class RoomController {
             res.status(200).json(successResponse(result, 'User invited successfully'))
         } catch (error) {
             logger.error('Invite user error:', error)
+            next(error)
+        }
+    }
+
+    async createInviteCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const { role } = req.body
+            const inviterId = req.user?.userId
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400))
+                return
+            }
+
+            if (!inviterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            if (role && role !== RoomRole.EDITOR && role !== RoomRole.VIEWER) {
+                res.status(400).json(errorResponse('Invalid role', 400))
+                return
+            }
+
+            const result = await roomService.createInviteCode({
+                room_id: id,
+                inviter_id: inviterId,
+                role,
+            })
+
+            res.status(201).json(successResponse(result, 'Invite code created successfully'))
+        } catch (error) {
+            logger.error('Create invite code error:', error)
+            next(error)
+        }
+    }
+
+    async joinByInviteCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { token } = req.body
+            const userId = req.user?.userId
+
+            if (!token) {
+                res.status(400).json(errorResponse('Invite code is required', 400))
+                return
+            }
+
+            if (!userId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.joinRoomByInviteCode({
+                token,
+                user_id: userId,
+            })
+
+            res.status(200).json(successResponse(result, 'Joined room successfully'))
+        } catch (error) {
+            logger.error('Join by invite code error:', error)
             next(error)
         }
     }

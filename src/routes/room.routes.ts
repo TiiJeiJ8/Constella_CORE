@@ -41,10 +41,14 @@ router.get('/', authenticateToken, (req, res, next) => roomController.getRooms(r
  * Room member list for member management.
  */
 router.get('/:id/members', authenticateToken, (req, res, next) => roomController.getRoomMembers(req, res, next));
+router.get('/:id/audit-logs', authenticateToken, (req, res, next) => roomController.getRoomAuditLogs(req, res, next));
 router.patch('/:id/members/:memberId/role', authenticateToken, (req, res, next) => roomController.updateMemberRole(req, res, next));
 router.delete('/:id/members/:memberId', authenticateToken, (req, res, next) => roomController.removeMember(req, res, next));
 router.post('/:id/members/:memberId/transfer-ownership', authenticateToken, (req, res, next) => roomController.transferOwnership(req, res, next));
 router.patch('/:id/settings', authenticateToken, (req, res, next) => roomController.updateRoomSettings(req, res, next));
+router.patch('/:id/password', authenticateToken, (req, res, next) => roomController.updateRoomPassword(req, res, next));
+router.post('/join-by-invite', authenticateToken, (req, res, next) => roomController.joinByInviteCode(req, res, next));
+router.post('/:id/invite-codes', authenticateToken, (req, res, next) => roomController.createInviteCode(req, res, next));
 
 router.get('/:id', authenticateToken, (req, res, next) => roomController.getRoomById(req, res, next));
 

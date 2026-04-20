@@ -98,7 +98,7 @@ export class AuthService {
         const user = await UserModel.findByUsername(email);
 
         if (!user) {
-            throw new AppError('Invalid username or password', 401, AUTH_ERRORS.INVALID_CREDENTIALS);
+            throw new AppError('User does not exist', 404, AUTH_ERRORS.AUTH_USER_NOT_FOUND);
         }
 
         // 验证密码

@@ -23,6 +23,33 @@ interface QueryResult<T = any> {
 class MemoryStore {
     private tables: Map<string, Map<string, any>> = new Map();
 
+    private parseSqlLiteral(rawValue: string): any {
+        const value = rawValue.trim();
+
+        if (/^null$/i.test(value)) {
+            return null;
+        }
+
+        if (/^true$/i.test(value)) {
+            return true;
+        }
+
+        if (/^false$/i.test(value)) {
+            return false;
+        }
+
+        if (/^now\(\)$/i.test(value)) {
+            return new Date().toISOString();
+        }
+
+        const quotedMatch = value.match(/^'(.*)'$/);
+        if (quotedMatch) {
+            return quotedMatch[1];
+        }
+
+        return value;
+    }
+
     constructor() {
         // 初始化表
         this.tables.set('users', new Map());
@@ -30,6 +57,9 @@ class MemoryStore {
         this.tables.set('room_members', new Map());
         this.tables.set('refresh_tokens', new Map());
         this.tables.set('room_documents', new Map());
+        this.tables.set('room_invitations', new Map());
+        this.tables.set('room_join_requests', new Map());
+        this.tables.set('room_audit_logs', new Map());
     }
 
     /**
@@ -39,13 +69,14 @@ class MemoryStore {
         // 兼容多行 INSERT 语句，支持跨行字段列表
         const normalizedSql = sql.replace(/\s+/g, ' ').trim();
         // 匹配 INSERT INTO table_name (...) VALUES (...) RETURNING *
-        const match = normalizedSql.match(/INSERT INTO (\w+)\s*\(([\s\S]*?)\)\s*VALUES/i);
+        const match = normalizedSql.match(/INSERT INTO (\w+)\s*\(([\s\S]*?)\)\s*VALUES\s*\(([\s\S]*?)\)/i);
         if (!match) {
             throw new Error('Unsupported INSERT query');
         }
 
         const tableName = match[1];
         const columns = match[2].split(',').map(c => c.trim());
+        const values = match[3].split(',').map(v => v.trim());
 
         const table = this.tables.get(tableName);
         if (!table) {
@@ -61,8 +92,18 @@ class MemoryStore {
 
         // 填充字段值
         columns.forEach((col, index) => {
-            if (params[index] !== undefined) {
-                record[col] = params[index];
+            const valueToken = values[index];
+            const placeholderMatch = valueToken?.match(/^\$(\d+)$/);
+            if (placeholderMatch) {
+                const paramIndex = parseInt(placeholderMatch[1], 10) - 1;
+                if (params[paramIndex] !== undefined) {
+                    record[col] = params[paramIndex];
+                }
+                return;
+            }
+
+            if (valueToken !== undefined) {
+                record[col] = this.parseSqlLiteral(valueToken);
             }
         });
 
@@ -144,13 +185,21 @@ class MemoryStore {
 
         // 解析 SET 子句
         const setPairs = setClause.split(',').map(p => p.trim());
-        let paramIndex = 0;
 
         setPairs.forEach(pair => {
-            const [field] = pair.split('=').map(s => s.trim());
-            if (field !== 'updated_at') {
-                record[field] = params[paramIndex++];
+            const [field, rawValue] = pair.split('=').map(s => s.trim());
+            if (field === 'updated_at') {
+                return;
             }
+
+            const placeholderMatch = rawValue?.match(/^\$(\d+)$/);
+            if (placeholderMatch) {
+                const nextParamIndex = parseInt(placeholderMatch[1], 10) - 1;
+                record[field] = params[nextParamIndex];
+                return;
+            }
+
+            record[field] = this.parseSqlLiteral(rawValue);
         });
 
         record.updated_at = new Date().toISOString();
@@ -440,6 +489,50 @@ class SQLiteStore {
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (room_id) REFERENCES rooms(id),
                     UNIQUE(room_id, doc_name)
+                );
+
+                CREATE TABLE IF NOT EXISTS room_audit_logs (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    actor_user_id TEXT,
+                    target_user_id TEXT,
+                    action TEXT NOT NULL,
+                    metadata TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (room_id) REFERENCES rooms(id),
+                    FOREIGN KEY (actor_user_id) REFERENCES users(id),
+                    FOREIGN KEY (target_user_id) REFERENCES users(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS room_invitations (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    inviter_id TEXT NOT NULL,
+                    invitee_email TEXT NOT NULL,
+                    role TEXT NOT NULL DEFAULT 'member',
+                    token TEXT NOT NULL UNIQUE,
+                    expires_at TEXT NOT NULL,
+                    accepted BOOLEAN NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (room_id) REFERENCES rooms(id),
+                    FOREIGN KEY (inviter_id) REFERENCES users(id)
+                );
+
+                CREATE TABLE IF NOT EXISTS room_join_requests (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    requester_id TEXT NOT NULL,
+                    requested_role TEXT NOT NULL DEFAULT 'member',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    reviewer_id TEXT,
+                    reviewed_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (room_id) REFERENCES rooms(id),
+                    FOREIGN KEY (requester_id) REFERENCES users(id),
+                    FOREIGN KEY (reviewer_id) REFERENCES users(id)
                 );
             `);
 

@@ -17,8 +17,8 @@ export enum RoomRole {
 export interface PermissionSettings {
     defaultRole?: 'editor' | 'member' | 'viewer';
     allowAnonymous?: boolean;
-    requireApproval?: boolean;
     allowInvite?: boolean;
+    showPrivateInList?: boolean;
 }
 
 // 画布相关配置
@@ -218,4 +218,33 @@ export interface CreateRoomInvitationParams {
     role?: RoomRole;
     token: string;
     expires_at: Date;
+}
+
+export type RoomAuditAction =
+    | 'room_joined'
+    | 'room_joined_by_invite'
+    | 'room_join_password_failed'
+    | 'room_member_invited'
+    | 'room_invite_code_created'
+    | 'room_member_role_updated'
+    | 'room_member_removed'
+    | 'room_ownership_transferred'
+    | 'room_password_updated';
+
+export interface RoomAuditLog {
+    id: string;
+    room_id: string;
+    actor_user_id?: string | null;
+    target_user_id?: string | null;
+    action: RoomAuditAction;
+    metadata?: Record<string, any> | null;
+    created_at: Date;
+}
+
+export interface CreateRoomAuditLogParams {
+    room_id: string;
+    actor_user_id?: string | null;
+    target_user_id?: string | null;
+    action: RoomAuditAction;
+    metadata?: Record<string, any> | null;
 }

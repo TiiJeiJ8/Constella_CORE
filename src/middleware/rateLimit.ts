@@ -1,4 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
+import { COMMON_ERRORS } from '../constants/errorCodes';
+import { errorResponse } from '../utils/response';
 
 interface RateLimitStore {
     [key: string]: {
@@ -23,10 +25,9 @@ export const rateLimit = (windowMs: number = 15 * 60 * 1000, max: number = 100) 
         }
 
         if (store[ip].count >= max) {
-            return res.status(429).json({
-                status: 'error',
-                message: 'Too many requests, please try again later',
-            });
+            return res.status(429).json(
+                errorResponse('Too many requests, please try again later', 429, COMMON_ERRORS.RATE_LIMITED)
+            );
         }
 
         store[ip].count++;

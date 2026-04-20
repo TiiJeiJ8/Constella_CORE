@@ -6,7 +6,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as encoding from 'lib0/encoding';
 import * as decoding from 'lib0/decoding';
 import { IPersistence } from './persistence';
-import { verifyRelayToken, extractRoomId, canAccessRoom, RelayTokenPayload } from './auth';
+import { verifyRelayToken, extractRoomId, authorizeRoomAccess, RelayTokenPayload } from './auth';
 import logger from '../config/logger';
 
 const wsReadyStateConnecting = 0;
@@ -84,8 +84,9 @@ export class YjsWebSocketServer {
     /**
      * 处理 WebSocket 升级请求
      */
-    private handleUpgrade(request: http.IncomingMessage, socket: any, head: Buffer): void {
-        const url = request.url || '';
+    private async handleUpgrade(request: http.IncomingMessage, socket: any, head: Buffer): Promise<void> {
+        try {
+            const url = request.url || '';
 
         // 检查路径
         if (!url.startsWith(this.options.path)) {
@@ -112,7 +113,8 @@ export class YjsWebSocketServer {
         }
 
         // 验证权限
-        if (!canAccessRoom(tokenPayload, roomId)) {
+        const authorizedPayload = await authorizeRoomAccess(tokenPayload, roomId);
+        if (!authorizedPayload) {
             logger.warn('WebSocket upgrade rejected - access denied');
             socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
             socket.destroy();
@@ -120,7 +122,7 @@ export class YjsWebSocketServer {
         }
 
         // 升级连接
-        this.wss.handleUpgrade(request, socket, head, (ws) => {
+            this.wss.handleUpgrade(request, socket, head, (ws) => {
             // 附加用户信息和房间信息到 WebSocket
             (
                 ws as WebSocket & {
@@ -137,7 +139,7 @@ export class YjsWebSocketServer {
                     canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
-            ).userId = tokenPayload.user_id;
+            ).userId = authorizedPayload.user_id;
             (
                 ws as WebSocket & {
                     roomId: string;
@@ -145,7 +147,7 @@ export class YjsWebSocketServer {
                     canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
-            ).canWrite = tokenPayload.can_write !== false;
+            ).canWrite = authorizedPayload.can_write !== false;
             (
                 ws as WebSocket & {
                     roomId: string;
@@ -153,11 +155,16 @@ export class YjsWebSocketServer {
                     canWrite: boolean;
                     tokenPayload: RelayTokenPayload;
                 }
-            ).tokenPayload = tokenPayload;
+            ).tokenPayload = authorizedPayload;
 
             this.wss.emit('connection', ws, request);
-            logger.info(`WebSocket upgraded for user ${tokenPayload.user_id} in room ${roomId}`);
-        });
+            logger.info(`WebSocket upgraded for user ${authorizedPayload.user_id} in room ${roomId}`);
+            });
+        } catch (error) {
+            logger.error('WebSocket upgrade failed unexpectedly:', error);
+            socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
+            socket.destroy();
+        }
     }
 
     /**

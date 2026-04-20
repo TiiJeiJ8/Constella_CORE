@@ -9,7 +9,11 @@ import { RoomRole } from '../types/database';
 import { config } from '../config';
 import logger from '../config/logger';
 import { AppError } from '../utils/appError';
+import { ROOM_ERRORS } from '../constants/errorCodes';
 import { getYjsWebSocketServer } from '../yjs';
+import { RoomAuditLogModel } from '../models/roomAuditLog.model';
+import { roomAuditService } from './roomAudit.service';
+import { RoomInvitationModel } from '../models/roomInvitation.model';
 
 interface CreateRoomParams {
     name: string;
@@ -24,6 +28,7 @@ interface JoinRoomParams {
     room_id: string;
     user_id: string;
     password?: string;
+    requester_key?: string;
 }
 
 interface InviteUserParams {
@@ -31,6 +36,17 @@ interface InviteUserParams {
     inviter_id: string;
     email: string;
     role?: RoomRole;
+}
+
+interface CreateInviteCodeParams {
+    room_id: string;
+    inviter_id: string;
+    role?: RoomRole;
+}
+
+interface JoinByInviteCodeParams {
+    token: string;
+    user_id: string;
 }
 
 interface UpdatePermissionsParams {
@@ -61,6 +77,14 @@ interface UpdateRoomSettingsParams {
     settings?: Record<string, any>;
 }
 
+interface UpdateRoomPasswordParams {
+    room_id: string;
+    requester_id: string;
+    current_password?: string;
+    new_password?: string;
+    is_private?: boolean;
+}
+
 interface RoomSettingsRecord {
     permissions?: Record<string, any>;
     appearance?: Record<string, any>;
@@ -87,6 +111,76 @@ interface RoomCapabilities {
 }
 
 export class RoomService {
+    private readonly maxPasswordAttempts = 5;
+    private readonly passwordAttemptWindowMs = 10 * 60 * 1000;
+    private readonly passwordBlockDurationMs = 15 * 60 * 1000;
+    private readonly inviteCodeExpiresInMs = 7 * 24 * 60 * 60 * 1000;
+    private readonly passwordAttemptTracker = new Map<string, {
+        count: number;
+        firstAttemptAt: number;
+        blockedUntil: number;
+    }>();
+
+    private generateInviteCode(length = 10): string {
+        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        let code = '';
+
+        for (let i = 0; i < length; i += 1) {
+            const index = Math.floor(Math.random() * alphabet.length);
+            code += alphabet[index];
+        }
+
+        return code;
+    }
+
+    private getPasswordAttemptKey(roomId: string, requesterKey?: string): string {
+        return `${roomId}:${requesterKey?.trim() || 'unknown'}`;
+    }
+
+    private assertPasswordAttemptAllowed(roomId: string, requesterKey?: string): void {
+        const key = this.getPasswordAttemptKey(roomId, requesterKey);
+        const now = Date.now();
+        const record = this.passwordAttemptTracker.get(key);
+
+        if (!record) {
+            return;
+        }
+
+        if (record.blockedUntil > now) {
+            throw new AppError('Too many password attempts. Please try again later', 429);
+        }
+
+        if (record.firstAttemptAt + this.passwordAttemptWindowMs <= now) {
+            this.passwordAttemptTracker.delete(key);
+        }
+    }
+
+    private recordPasswordAttemptFailure(roomId: string, requesterKey?: string): void {
+        const key = this.getPasswordAttemptKey(roomId, requesterKey);
+        const now = Date.now();
+        const existing = this.passwordAttemptTracker.get(key);
+
+        if (!existing || existing.firstAttemptAt + this.passwordAttemptWindowMs <= now) {
+            this.passwordAttemptTracker.set(key, {
+                count: 1,
+                firstAttemptAt: now,
+                blockedUntil: 0,
+            });
+            return;
+        }
+
+        const nextCount = existing.count + 1;
+        this.passwordAttemptTracker.set(key, {
+            count: nextCount,
+            firstAttemptAt: existing.firstAttemptAt,
+            blockedUntil: nextCount >= this.maxPasswordAttempts ? now + this.passwordBlockDurationMs : 0,
+        });
+    }
+
+    private clearPasswordAttemptFailures(roomId: string, requesterKey?: string): void {
+        this.passwordAttemptTracker.delete(this.getPasswordAttemptKey(roomId, requesterKey));
+    }
+
     private mergeRoomSettings(base: RoomSettingsRecord | null | undefined, patch: RoomSettingsRecord | null | undefined) {
         const source = base && typeof base === 'object' ? base : {};
         const nextPatch = patch && typeof patch === 'object' ? patch : {};
@@ -106,9 +200,76 @@ export class RoomService {
         return merged;
     }
 
+    private splitRoomIconGraphemes(value: string): string[] {
+        if (typeof Intl !== 'undefined' && typeof Intl.Segmenter !== 'undefined') {
+            const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+            return Array.from(segmenter.segment(value), segment => segment.segment);
+        }
+
+        return Array.from(value);
+    }
+
+    private isEmojiLike(segment: string): boolean {
+        return /\p{Extended_Pictographic}/u.test(segment);
+    }
+
+    private isCjkLike(segment: string): boolean {
+        return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(segment);
+    }
+
+    private getRoomIconWeight(segment: string): number {
+        if (this.isEmojiLike(segment)) {
+            return 4;
+        }
+
+        if (this.isCjkLike(segment)) {
+            return 2;
+        }
+
+        return 1;
+    }
+
+    private normalizeRoomIcon(icon: unknown): string | null {
+        if (typeof icon !== 'string') {
+            return null;
+        }
+
+        const trimmed = icon.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        const normalized: string[] = [];
+        let usedWeight = 0;
+
+        for (const segment of this.splitRoomIconGraphemes(trimmed)) {
+            const segmentWeight = this.getRoomIconWeight(segment);
+            if (usedWeight + segmentWeight > 4) {
+                break;
+            }
+
+            normalized.push(segment);
+            usedWeight += segmentWeight;
+        }
+
+        return normalized.length ? normalized.join('') : null;
+    }
+
     private getDefaultJoinRole(room: { settings?: any | null }): RoomRole {
         const configuredRole = room?.settings?.permissions?.defaultRole;
         return this.normalizeRole(configuredRole) || RoomRole.EDITOR;
+    }
+
+    private canPreviewPrivateRoom(room: { is_private: boolean; settings?: any | null }, role: RoomRole | null): boolean {
+        if (!room.is_private) {
+            return true;
+        }
+
+        if (role) {
+            return true;
+        }
+
+        return room?.settings?.permissions?.showPrivateInList === true;
     }
 
     private normalizeRole(role: RoomRole | string | null | undefined): RoomRole | null {
@@ -152,16 +313,13 @@ export class RoomService {
         return this.normalizeRole(membership?.role || null);
     }
 
-    private canAccessRoom(room: { is_private: boolean }, role: RoomRole | null): boolean {
-        return !room.is_private || role !== null;
-    }
-
     private getJoinPreview(room: { id: string; name: string; description?: string | null; is_private: boolean; settings?: unknown; owner_id: string; created_at: Date; updated_at: Date }, memberCount: number, userRole: RoomRole | null) {
         return {
             id: room.id,
             name: room.name,
             description: room.description || '',
             is_private: room.is_private,
+            settings: room.settings || {},
             owner_id: room.owner_id,
             created_at: room.created_at,
             updated_at: room.updated_at,
@@ -169,6 +327,7 @@ export class RoomService {
             user_role: userRole,
             capabilities: this.buildCapabilities(userRole),
             access_scope: userRole ? 'member' : 'preview',
+            join_mode: 'direct',
         };
     }
 
@@ -210,7 +369,12 @@ export class RoomService {
                 description: params.description,
                 is_private: params.is_private || false,
                 password: hashedPassword,
-                settings: params.settings,
+                settings: this.mergeRoomSettings({
+                    permissions: {
+                        defaultRole: RoomRole.EDITOR,
+                        showPrivateInList: false,
+                    },
+                }, params.settings as RoomSettingsRecord | null | undefined),
                 owner_id: params.owner_id,
             });
 
@@ -249,7 +413,7 @@ export class RoomService {
                 rooms = await Promise.all(roomIds.map((id) => RoomModel.findById(id)));
                 rooms = rooms.filter((r) => r !== null);
             } else {
-                rooms = await RoomModel.findPublicRooms(limit, offset);
+                rooms = await RoomModel.findAllRooms(limit, offset);
             }
 
             const enrichedRooms = await Promise.all(
@@ -261,6 +425,9 @@ export class RoomService {
                     const userRole = currentUserId
                         ? this.normalizeRole(members.find((m) => m.user_id === currentUserId)?.role || null)
                         : null;
+                    if (!this.canPreviewPrivateRoom(room, userRole)) {
+                        return null;
+                    }
 
                     // eslint-disable-next-line @typescript-eslint/no-unused-vars
                     const { password, ...roomData } = room;
@@ -277,6 +444,8 @@ export class RoomService {
                         member_count: members.length,
                         user_role: userRole,
                         capabilities: this.buildCapabilities(userRole),
+                        access_scope: userRole ? 'member' : 'preview',
+                        join_mode: 'direct',
                     };
                 })
             );
@@ -302,7 +471,7 @@ export class RoomService {
                     if (!room) return null;
 
                     const userRole = await this.getUserRole(room.id, currentUserId);
-                    if (!this.canAccessRoom(room, userRole)) {
+                    if (!this.canPreviewPrivateRoom(room, userRole)) {
                         return null;
                     }
 
@@ -324,6 +493,8 @@ export class RoomService {
                         member_count: members.length,
                         user_role: userRole,
                         capabilities: this.buildCapabilities(userRole),
+                        access_scope: userRole ? 'member' : 'preview',
+                        join_mode: 'direct',
                     };
                 })
             );
@@ -348,8 +519,8 @@ export class RoomService {
             }
 
             const userRole = await this.getUserRole(roomId, userId);
-            if (!this.canAccessRoom(room, userRole)) {
-                throw new AppError('Access denied', 403);
+            if (!this.canPreviewPrivateRoom(room, userRole)) {
+                throw new AppError('Access denied', 403, ROOM_ERRORS.ACCESS_DENIED);
             }
 
             const members = await RoomMemberModel.findByRoomId(roomId);
@@ -428,9 +599,30 @@ export class RoomService {
         }
     }
 
+    async getRoomAuditLogs(roomId: string, requesterId?: string, limit = 100, offset = 0) {
+        try {
+            const requesterRole = await this.getUserRole(roomId, requesterId);
+            if (!requesterRole) {
+                throw new AppError('Access denied', 403);
+            }
+
+            const logs = await RoomAuditLogModel.findByRoomId(roomId, limit, offset);
+
+            return {
+                logs,
+                total: logs.length,
+                requester_role: requesterRole,
+                capabilities: this.buildCapabilities(requesterRole),
+            };
+        } catch (error) {
+            logger.error('Error getting room audit logs:', error);
+            throw error;
+        }
+    }
+
     async joinRoom(params: JoinRoomParams) {
         try {
-            const { room_id, user_id, password } = params;
+            const { room_id, user_id, password, requester_key } = params;
 
             const room = await RoomModel.findById(room_id);
             if (!room) {
@@ -439,18 +631,29 @@ export class RoomService {
 
             const existingMember = await RoomMemberModel.findByRoomAndUser(room_id, user_id);
             if (existingMember) {
-                throw new AppError('User is already a member of this room', 409);
+                throw new AppError('User is already a member of this room', 409, ROOM_ERRORS.ALREADY_JOINED);
             }
 
             if (room.is_private && room.password) {
                 if (!password) {
-                    throw new AppError('Password required for private room', 400);
+                    throw new AppError('Password required for private room', 400, ROOM_ERRORS.INVALID_PASSWORD);
                 }
 
+                this.assertPasswordAttemptAllowed(room_id, requester_key);
                 const isPasswordValid = await bcrypt.compare(password, room.password);
                 if (!isPasswordValid) {
-                    throw new AppError('Invalid room password', 401);
+                    this.recordPasswordAttemptFailure(room_id, requester_key);
+                    await roomAuditService.record({
+                        room_id,
+                        actor_user_id: user_id,
+                        action: 'room_join_password_failed',
+                        metadata: {
+                            requester_key: requester_key || null,
+                        },
+                    });
+                    throw new AppError('Invalid room password', 401, ROOM_ERRORS.INVALID_PASSWORD);
                 }
+                this.clearPasswordAttemptFailures(room_id, requester_key);
             }
 
             const defaultJoinRole = this.getDefaultJoinRole(room);
@@ -462,6 +665,16 @@ export class RoomService {
 
             const normalizedRole = this.normalizeRole(member.role) || defaultJoinRole;
 
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: user_id,
+                target_user_id: user_id,
+                action: 'room_joined',
+                metadata: {
+                    role: normalizedRole,
+                },
+            });
+
             return {
                 member: {
                     ...member,
@@ -472,6 +685,93 @@ export class RoomService {
             };
         } catch (error) {
             logger.error('Error joining room:', error);
+            throw error;
+        }
+    }
+
+    async updateRoomPassword(params: UpdateRoomPasswordParams) {
+        try {
+            const { room_id, requester_id, current_password, new_password, is_private } = params;
+
+            const room = await RoomModel.findById(room_id);
+            if (!room) {
+                throw new AppError('Room not found', 404);
+            }
+
+            const requesterMember = await RoomMemberModel.findByRoomAndUser(room_id, requester_id);
+            const requesterRole = this.normalizeRole(requesterMember?.role);
+            if (requesterRole !== RoomRole.OWNER) {
+                throw new AppError('Only the owner can update room password', 403);
+            }
+
+            const trimmedNewPassword = typeof new_password === 'string' ? new_password.trim() : '';
+            const nextIsPrivate = typeof is_private === 'boolean' ? is_private : room.is_private;
+
+            if (room.is_private && room.password) {
+                if (!current_password) {
+                    throw new AppError('Current password is required', 400);
+                }
+
+                const currentPasswordValid = await bcrypt.compare(current_password, room.password);
+                if (!currentPasswordValid) {
+                    throw new AppError('Current password is incorrect', 401);
+                }
+            }
+
+            if (nextIsPrivate && !trimmedNewPassword && !room.is_private) {
+                throw new AppError('New password is required when making room private', 400);
+            }
+
+            if (nextIsPrivate && !trimmedNewPassword && room.is_private) {
+                throw new AppError('New password is required when updating a private room password', 400);
+            }
+
+            if (!nextIsPrivate && !room.is_private) {
+                throw new AppError('Room is already public', 400);
+            }
+
+            if (nextIsPrivate && trimmedNewPassword) {
+                this.validateRoomPasswordStrength(trimmedNewPassword);
+            }
+
+            const updates: Record<string, any> = {
+                is_private: nextIsPrivate,
+                password: nextIsPrivate ? await bcrypt.hash(trimmedNewPassword, 10) : null,
+            };
+
+            const updatedRoom = await RoomModel.update(room_id, updates);
+            if (!updatedRoom) {
+                throw new AppError('Failed to update room password', 500);
+            }
+
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: requester_id,
+                action: 'room_password_updated',
+                metadata: {
+                    is_private: nextIsPrivate,
+                    previous_is_private: room.is_private,
+                },
+            });
+
+            getYjsWebSocketServer()?.broadcastRoomEvent(room_id, {
+                type: 'room_settings_updated',
+                roomId: room_id,
+                targetUserId: requester_id,
+                memberId: requesterMember?.id || requester_id,
+                actorUserId: requester_id,
+            });
+
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { password: _password, ...roomWithoutPassword } = updatedRoom;
+
+            return {
+                room: roomWithoutPassword,
+                user_role: requesterRole,
+                capabilities: this.buildCapabilities(requesterRole),
+            };
+        } catch (error) {
+            logger.error('Error updating room password:', error);
             throw error;
         }
     }
@@ -505,6 +805,17 @@ export class RoomService {
                 role: this.normalizeRole(role || RoomRole.EDITOR) || RoomRole.EDITOR,
             });
 
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: inviter_id,
+                target_user_id: invitedUser.id,
+                action: 'room_member_invited',
+                metadata: {
+                    role: this.normalizeRole(member.role) || RoomRole.EDITOR,
+                    invitee_email: email,
+                },
+            });
+
             return {
                 member: {
                     ...member,
@@ -513,6 +824,138 @@ export class RoomService {
             };
         } catch (error) {
             logger.error('Error inviting user:', error);
+            throw error;
+        }
+    }
+
+    async createInviteCode(params: CreateInviteCodeParams) {
+        try {
+            const { room_id, inviter_id, role } = params;
+
+            const inviterMember = await RoomMemberModel.findByRoomAndUser(room_id, inviter_id);
+            if (!inviterMember) {
+                throw new AppError('Inviter is not a member of this room', 403);
+            }
+
+            const inviterRole = this.normalizeRole(inviterMember.role);
+            if (inviterRole !== RoomRole.OWNER && inviterRole !== RoomRole.ADMIN) {
+                throw new AppError('Only owners and admins can create invite codes', 403);
+            }
+
+            const normalizedRole = this.normalizeRole(role || RoomRole.EDITOR);
+            if (normalizedRole !== RoomRole.EDITOR && normalizedRole !== RoomRole.VIEWER) {
+                throw new AppError('Invite code role must be editor or viewer', 400);
+            }
+
+            const room = await RoomModel.findById(room_id);
+            if (!room) {
+                throw new AppError('Room not found', 404);
+            }
+
+            const invite = await RoomInvitationModel.create({
+                room_id,
+                inviter_id,
+                invitee_email: '',
+                role: normalizedRole,
+                token: this.generateInviteCode(),
+                expires_at: new Date(Date.now() + this.inviteCodeExpiresInMs),
+            });
+
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: inviter_id,
+                action: 'room_invite_code_created',
+                metadata: {
+                    role: normalizedRole,
+                    expires_at: invite.expires_at,
+                    is_private: room.is_private,
+                },
+            });
+
+            return {
+                invite_code: invite.token,
+                role: normalizedRole,
+                expires_at: invite.expires_at,
+            };
+        } catch (error) {
+            logger.error('Error creating invite code:', error);
+            throw error;
+        }
+    }
+
+    async joinRoomByInviteCode(params: JoinByInviteCodeParams) {
+        try {
+            const { token, user_id } = params;
+            const normalizedToken = token.trim().toUpperCase();
+            if (!normalizedToken) {
+                throw new AppError('Invite code is required', 400);
+            }
+
+            const invitation = await RoomInvitationModel.findByToken(normalizedToken);
+            if (!invitation) {
+                throw new AppError('Invite code is invalid', 404);
+            }
+
+            if (invitation.accepted) {
+                throw new AppError('Invite code has already been used', 409);
+            }
+
+            if (new Date(invitation.expires_at).getTime() <= Date.now()) {
+                throw new AppError('Invite code has expired', 410);
+            }
+
+            const room = await RoomModel.findById(invitation.room_id);
+            if (!room) {
+                throw new AppError('Room not found', 404);
+            }
+
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { password: existingRoomPassword, ...roomWithoutPassword } = room;
+
+            const existingMember = await RoomMemberModel.findByRoomAndUser(room.id, user_id);
+            if (existingMember) {
+                return {
+                    room: roomWithoutPassword,
+                    member: {
+                        ...existingMember,
+                        role: this.normalizeRole(existingMember.role) || RoomRole.EDITOR,
+                    },
+                    user_role: this.normalizeRole(existingMember.role) || RoomRole.EDITOR,
+                    capabilities: this.buildCapabilities(existingMember.role),
+                };
+            }
+
+            const role = this.normalizeRole(invitation.role) || RoomRole.EDITOR;
+            const member = await RoomMemberModel.create({
+                room_id: room.id,
+                user_id,
+                role,
+            });
+
+            await RoomInvitationModel.markAccepted(invitation.id);
+
+            await roomAuditService.record({
+                room_id: room.id,
+                actor_user_id: invitation.inviter_id,
+                target_user_id: user_id,
+                action: 'room_joined_by_invite',
+                metadata: {
+                    role,
+                    invite_code: normalizedToken,
+                },
+            });
+
+            return {
+                room: roomWithoutPassword,
+                member: {
+                    ...member,
+                    role,
+                },
+                user_role: role,
+                capabilities: this.buildCapabilities(role),
+            };
+        } catch (error) {
+            logger.error('Error joining room by invite code:', error);
             throw error;
         }
     }
@@ -558,6 +1001,18 @@ export class RoomService {
             }
 
             const updatedMember = await RoomMemberModel.updateRole(member_id, nextRole);
+
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: requester_id,
+                target_user_id: targetMember.user_id,
+                action: 'room_member_role_updated',
+                metadata: {
+                    member_id,
+                    previous_role: targetRole,
+                    new_role: nextRole,
+                },
+            });
 
             getYjsWebSocketServer()?.broadcastRoomEvent(room_id, {
                 type: 'room_permissions_updated',
@@ -616,6 +1071,17 @@ export class RoomService {
                 throw new AppError('Failed to remove member', 500);
             }
 
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: requester_id,
+                target_user_id: targetMember.user_id,
+                action: 'room_member_removed',
+                metadata: {
+                    member_id,
+                    removed_role: targetRole,
+                },
+            });
+
             getYjsWebSocketServer()?.broadcastRoomEvent(room_id, {
                 type: 'room_members_updated',
                 roomId: room_id,
@@ -666,6 +1132,18 @@ export class RoomService {
             const updatedRequester = await RoomMemberModel.updateRole(requesterMember.id, RoomRole.ADMIN);
             const updatedTarget = await RoomMemberModel.updateRole(member_id, RoomRole.OWNER);
             await RoomModel.update(room_id, { owner_id: targetMember.user_id });
+
+            await roomAuditService.record({
+                room_id,
+                actor_user_id: requester_id,
+                target_user_id: targetMember.user_id,
+                action: 'room_ownership_transferred',
+                metadata: {
+                    previous_owner_user_id: requester_id,
+                    new_owner_user_id: targetMember.user_id,
+                    member_id,
+                },
+            });
 
             getYjsWebSocketServer()?.broadcastRoomEvent(room_id, {
                 type: 'room_permissions_updated',
@@ -731,11 +1209,16 @@ export class RoomService {
                 throw new AppError('Only the owner can update security settings', 403);
             }
 
+            if (typeof is_private === 'boolean') {
+                throw new AppError('Privacy changes must be made via the password update flow', 400);
+            }
+
             const sanitizedSettings: Record<string, any> = {};
 
             if (patch.appearance && typeof patch.appearance === 'object') {
+                const sanitizedIcon = this.normalizeRoomIcon(patch.appearance.icon);
                 sanitizedSettings.appearance = {
-                    ...(typeof patch.appearance.icon === 'string' ? { icon: patch.appearance.icon.trim().slice(0, 8) } : {}),
+                    ...(sanitizedIcon ? { icon: sanitizedIcon } : {}),
                     ...(typeof patch.appearance.accentColor === 'string' ? { accentColor: patch.appearance.accentColor.trim().slice(0, 32) } : {}),
                 };
             }
@@ -774,8 +1257,8 @@ export class RoomService {
                 if (typeof patch.permissions.allowInvite === 'boolean') {
                     nextPermissions.allowInvite = patch.permissions.allowInvite;
                 }
-                if (typeof patch.permissions.requireApproval === 'boolean') {
-                    nextPermissions.requireApproval = patch.permissions.requireApproval;
+                if (typeof patch.permissions.showPrivateInList === 'boolean') {
+                    nextPermissions.showPrivateInList = patch.permissions.showPrivateInList;
                 }
                 if (typeof patch.permissions.allowAnonymous === 'boolean') {
                     nextPermissions.allowAnonymous = patch.permissions.allowAnonymous;
@@ -792,10 +1275,6 @@ export class RoomService {
 
             if (typeof description === 'string') {
                 updates.description = description.trim();
-            }
-
-            if (typeof is_private === 'boolean' && requesterRole === RoomRole.OWNER) {
-                updates.is_private = is_private;
             }
 
             updates.settings = nextSettings;
@@ -904,4 +1383,3 @@ export class RoomService {
 }
 
 export const roomService = new RoomService();
-

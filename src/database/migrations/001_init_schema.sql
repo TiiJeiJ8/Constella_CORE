@@ -95,6 +95,28 @@ CREATE TABLE IF NOT EXISTS room_invitations (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS room_audit_logs (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    target_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    action VARCHAR(64) NOT NULL,
+    metadata JSONB,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS room_join_requests (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    requester_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_role VARCHAR(20) NOT NULL DEFAULT 'member' CHECK (requested_role IN ('owner', 'admin', 'member', 'viewer', 'editor')),
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    reviewer_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- ============================================
 -- 8. 创建索引
 -- ============================================
@@ -124,6 +146,11 @@ CREATE INDEX IF NOT EXISTS idx_room_documents_snapshot ON room_documents(is_snap
 CREATE INDEX IF NOT EXISTS idx_room_invitations_room_id ON room_invitations(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_invitations_invitee_email ON room_invitations(invitee_email);
 CREATE INDEX IF NOT EXISTS idx_room_invitations_token ON room_invitations(token);
+CREATE INDEX IF NOT EXISTS idx_room_join_requests_room_id ON room_join_requests(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_join_requests_requester_id ON room_join_requests(requester_id);
+CREATE INDEX IF NOT EXISTS idx_room_join_requests_status ON room_join_requests(status);
+CREATE INDEX IF NOT EXISTS idx_room_audit_logs_room_id ON room_audit_logs(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_audit_logs_created_at ON room_audit_logs(created_at);
 
 -- ============================================
 -- 9. 创建触发器函数（自动更新 updated_at）
@@ -182,6 +209,6 @@ CREATE TRIGGER update_room_documents_updated_at
 DO $$
 BEGIN
     RAISE NOTICE 'Database initialization completed successfully!';
-    RAISE NOTICE 'Tables created: users, rooms, room_members, refresh_tokens, room_documents, room_invitations';
+    RAISE NOTICE 'Tables created: users, rooms, room_members, refresh_tokens, room_documents, room_invitations, room_join_requests';
     RAISE NOTICE 'Indexes and triggers created successfully.';
 END $$;

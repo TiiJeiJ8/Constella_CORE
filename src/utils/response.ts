@@ -1,5 +1,5 @@
 import { Response } from 'express';
-import { ErrorCode } from '../constants/errorCodes';
+import { COMMON_ERRORS, ErrorCode } from '../constants/errorCodes';
 
 interface ValidationError {
     field?: string;
@@ -11,6 +11,15 @@ interface ApiResponse<T = unknown> {
     code: number;
     message: string;
     data: T | null;
+}
+
+function fallbackErrorCodeByStatus(statusCode: number): ErrorCode {
+    if (statusCode === 400) return COMMON_ERRORS.BAD_REQUEST;
+    if (statusCode === 401) return COMMON_ERRORS.UNAUTHORIZED;
+    if (statusCode === 403) return COMMON_ERRORS.FORBIDDEN;
+    if (statusCode === 404) return COMMON_ERRORS.NOT_FOUND;
+    if (statusCode === 429) return COMMON_ERRORS.RATE_LIMITED;
+    return COMMON_ERRORS.INTERNAL_ERROR;
 }
 
 /**
@@ -32,10 +41,12 @@ export function errorResponse(
     statusCode: number = 500,
     errorCode?: ErrorCode
 ): ApiResponse<ErrorCode | null> {
+    const resolvedErrorCode = errorCode || fallbackErrorCodeByStatus(statusCode);
+
     return {
         code: statusCode,
         message,
-        data: errorCode || null,
+        data: resolvedErrorCode,
     };
 }
 
