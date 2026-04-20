@@ -1334,6 +1334,8 @@ export class RoomService {
 
             logger.info(`Room ${room_id} deleted by user ${user_id}`);
 
+            getYjsWebSocketServer()?.closeRoom(room_id, 'Room deleted by owner');
+
             try {
                 const assetsDir = path.join(process.cwd(), 'uploads', 'assets', room_id);
                 await fs.rm(assetsDir, { recursive: true, force: true });

@@ -20,12 +20,12 @@ const syncMessageStep2 = 1;
 const syncMessageUpdate = 2;
 
 export interface RoomRealtimeEvent {
-    type: 'room_permissions_updated' | 'room_members_updated' | 'room_ownership_transferred' | 'room_settings_updated';
+    type: 'room_permissions_updated' | 'room_members_updated' | 'room_ownership_transferred' | 'room_settings_updated' | 'room_deleted';
     roomId: string;
-    targetUserId: string;
-    memberId: string;
+    targetUserId?: string;
+    memberId?: string;
     role?: string;
-    actorUserId: string;
+    actorUserId?: string;
 }
 
 /**
@@ -482,6 +482,40 @@ export class YjsWebSocketServer {
         wsDoc.conns.forEach((_, conn) => {
             this.send(conn, message);
         });
+    }
+
+    closeRoom(roomId: string, reason = 'Room deleted'): void {
+        const wsDoc = this.docs.get(roomId);
+        if (!wsDoc) {
+            return;
+        }
+
+        const closeEvent: RoomRealtimeEvent = {
+            type: 'room_deleted',
+            roomId,
+            actorUserId: 'system',
+            targetUserId: 'system',
+            memberId: 'system',
+        };
+
+        this.broadcastRoomEvent(roomId, closeEvent);
+
+        // 给客户端一点时间接收删除事件，再关闭连接并清理文档。
+        setTimeout(() => {
+            wsDoc.conns.forEach((_, conn) => {
+                try {
+                    conn.close(1000, reason);
+                } catch (error) {
+                    logger.warn(`Failed to close room connection for ${roomId}:`, error);
+                }
+            });
+
+            wsDoc.doc.destroy();
+            wsDoc.awareness.destroy();
+            this.docs.delete(roomId);
+
+            logger.info(`Room ${roomId} realtime sessions closed`);
+        }, 50);
     }
 
     /**

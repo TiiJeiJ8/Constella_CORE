@@ -178,11 +178,12 @@ export class RoomModel {
      */
     static async delete(id: string): Promise<boolean> {
         try {
-            // 对于 SQLite，需要逐个删除关联记录以避免外键约束失败
-            // 删除房间成员
+            // 对于 SQLite（当前未统一使用 ON DELETE CASCADE），
+            // 需要先清理所有 room_id 关联记录，避免外键约束失败。
+            await db.query('DELETE FROM room_invitations WHERE room_id = $1', [id]);
+            await db.query('DELETE FROM room_join_requests WHERE room_id = $1', [id]);
+            await db.query('DELETE FROM room_audit_logs WHERE room_id = $1', [id]);
             await db.query('DELETE FROM room_members WHERE room_id = $1', [id]);
-
-            // 删除房间文档
             await db.query('DELETE FROM room_documents WHERE room_id = $1', [id]);
 
             // 最后删除房间本身

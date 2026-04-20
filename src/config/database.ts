@@ -669,31 +669,23 @@ class SQLiteStore {
                 };
             } else if (upperSql.startsWith('UPDATE')) {
                 const hasReturning = /RETURNING/i.test(convertedSql);
-                const stmt = this.db.prepare(sqlWithPlaceholders);
-                const info = stmt.run(...cleanParams);
 
-                // 如果是 UPDATE...RETURNING，获取更新的行
+                // UPDATE ... RETURNING 需要通过 .all() 获取返回行。
+                // 之前使用 run()+手动回查会在占位符转换后出现取不到行的问题，导致误判为更新失败。
                 if (hasReturning) {
-                    // 对于 UPDATE...RETURNING，SQLite 会直接返回行
-                    // 但 stmt.run() 不会返回行，需要重新查询
-                    // 提取表名和 WHERE 条件来重新查询
-                    const tableMatch = convertedSql.match(/UPDATE (\w+)\s+SET/i);
-                    const whereMatch = convertedSql.match(/WHERE\s+(.+?)(?:RETURNING|$)/i);
-                    if (tableMatch && whereMatch) {
-                        const tableName = tableMatch[1];
-                        const whereClause = whereMatch[1].trim();
-                        const selectStmt = this.db.prepare(`SELECT * FROM ${tableName} WHERE ${whereClause}`);
-                        const rows = selectStmt.all(...cleanParams);
-                        return {
-                            rows: rows || [],
-                            command: 'UPDATE',
-                            rowCount: info.changes,
-                            oid: 0,
-                            fields: [],
-                        };
-                    }
+                    const stmt = this.db.prepare(sqlWithPlaceholders);
+                    const rows = stmt.all(...cleanParams);
+                    return {
+                        rows: rows || [],
+                        command: 'UPDATE',
+                        rowCount: (rows || []).length,
+                        oid: 0,
+                        fields: [],
+                    };
                 }
 
+                const stmt = this.db.prepare(sqlWithPlaceholders);
+                const info = stmt.run(...cleanParams);
                 return {
                     rows: [],
                     command: 'UPDATE',
