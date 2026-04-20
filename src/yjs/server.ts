@@ -88,77 +88,77 @@ export class YjsWebSocketServer {
         try {
             const url = request.url || '';
 
-        // 检查路径
-        if (!url.startsWith(this.options.path)) {
-            socket.destroy();
-            return;
-        }
+            // 检查路径
+            if (!url.startsWith(this.options.path)) {
+                socket.destroy();
+                return;
+            }
 
-        // 提取房间 ID（先提取，用于白名单检查）
-        const roomId = extractRoomId(url);
-        if (!roomId) {
-            logger.warn('WebSocket upgrade rejected - invalid room ID format');
-            socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
-            socket.destroy();
-            return;
-        }
+            // 提取房间 ID（先提取，用于白名单检查）
+            const roomId = extractRoomId(url);
+            if (!roomId) {
+                logger.warn('WebSocket upgrade rejected - invalid room ID format');
+                socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
+                socket.destroy();
+                return;
+            }
 
-        // 验证 token（传递 roomId 以支持测试白名单）
-        const tokenPayload = verifyRelayToken(request, roomId);
-        if (!tokenPayload) {
-            logger.warn('WebSocket upgrade rejected - invalid or missing token');
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
-            socket.destroy();
-            return;
-        }
+            // 验证 token（传递 roomId 以支持测试白名单）
+            const tokenPayload = verifyRelayToken(request, roomId);
+            if (!tokenPayload) {
+                logger.warn('WebSocket upgrade rejected - invalid or missing token');
+                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
+                socket.destroy();
+                return;
+            }
 
-        // 验证权限
-        const authorizedPayload = await authorizeRoomAccess(tokenPayload, roomId);
-        if (!authorizedPayload) {
-            logger.warn('WebSocket upgrade rejected - access denied');
-            socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-            socket.destroy();
-            return;
-        }
+            // 验证权限
+            const authorizedPayload = await authorizeRoomAccess(tokenPayload, roomId);
+            if (!authorizedPayload) {
+                logger.warn('WebSocket upgrade rejected - access denied');
+                socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+                socket.destroy();
+                return;
+            }
 
-        // 升级连接
+            // 升级连接
             this.wss.handleUpgrade(request, socket, head, (ws) => {
-            // 附加用户信息和房间信息到 WebSocket
-            (
-                ws as WebSocket & {
-                    roomId: string;
-                    userId: string;
-                    canWrite: boolean;
-                    tokenPayload: RelayTokenPayload;
-                }
-            ).roomId = roomId;
-            (
-                ws as WebSocket & {
-                    roomId: string;
-                    userId: string;
-                    canWrite: boolean;
-                    tokenPayload: RelayTokenPayload;
-                }
-            ).userId = authorizedPayload.user_id;
-            (
-                ws as WebSocket & {
-                    roomId: string;
-                    userId: string;
-                    canWrite: boolean;
-                    tokenPayload: RelayTokenPayload;
-                }
-            ).canWrite = authorizedPayload.can_write !== false;
-            (
-                ws as WebSocket & {
-                    roomId: string;
-                    userId: string;
-                    canWrite: boolean;
-                    tokenPayload: RelayTokenPayload;
-                }
-            ).tokenPayload = authorizedPayload;
+                // 附加用户信息和房间信息到 WebSocket
+                (
+                    ws as WebSocket & {
+                        roomId: string;
+                        userId: string;
+                        canWrite: boolean;
+                        tokenPayload: RelayTokenPayload;
+                    }
+                ).roomId = roomId;
+                (
+                    ws as WebSocket & {
+                        roomId: string;
+                        userId: string;
+                        canWrite: boolean;
+                        tokenPayload: RelayTokenPayload;
+                    }
+                ).userId = authorizedPayload.user_id;
+                (
+                    ws as WebSocket & {
+                        roomId: string;
+                        userId: string;
+                        canWrite: boolean;
+                        tokenPayload: RelayTokenPayload;
+                    }
+                ).canWrite = authorizedPayload.can_write !== false;
+                (
+                    ws as WebSocket & {
+                        roomId: string;
+                        userId: string;
+                        canWrite: boolean;
+                        tokenPayload: RelayTokenPayload;
+                    }
+                ).tokenPayload = authorizedPayload;
 
-            this.wss.emit('connection', ws, request);
-            logger.info(`WebSocket upgraded for user ${authorizedPayload.user_id} in room ${roomId}`);
+                this.wss.emit('connection', ws, request);
+                logger.info(`WebSocket upgraded for user ${authorizedPayload.user_id} in room ${roomId}`);
             });
         } catch (error) {
             logger.error('WebSocket upgrade failed unexpectedly:', error);

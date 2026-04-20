@@ -8,14 +8,14 @@ export class RoomInvitationModel {
     static async create(params: CreateRoomInvitationParams): Promise<RoomInvitation> {
         const id = randomUUID();
         const persistedRole = params.role === RoomRole.EDITOR ? RoomRole.MEMBER : params.role;
-                const isSqlite = (config.database.type || '').toLowerCase() === 'sqlite';
-                const query = isSqlite
-                        ? `
+        const isSqlite = (config.database.type || '').toLowerCase() === 'sqlite';
+        const query = isSqlite
+            ? `
             INSERT INTO room_invitations (id, room_id, inviter_id, invitee_email, role, token, expires_at, accepted, created_at, updated_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW(), NOW())
             RETURNING *
         `
-                        : `
+            : `
             INSERT INTO room_invitations (id, room_id, inviter_id, invitee_email, role, token, expires_at, accepted, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, NOW())
             RETURNING *
