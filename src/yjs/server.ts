@@ -345,6 +345,7 @@ export class YjsWebSocketServer {
             const decoder = decoding.createDecoder(message);
             const messageType = decoding.readVarUint(decoder);
 
+            // 诊断日志：记录消息类型和大小
             logger.debug(`[Yjs] Received message type: ${messageType}, size: ${message.length} bytes`);
 
             switch (messageType) {

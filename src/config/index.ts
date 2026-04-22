@@ -2,6 +2,8 @@ import dotenv from 'dotenv';
 import * as yaml from 'js-yaml';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { randomBytes } from 'crypto';
 
 dotenv.config();
 
@@ -109,6 +111,19 @@ interface YamlConfig extends ConfigObject {
     yjs?: YamlYjsConfig;
 }
 
+const MIN_JWT_SECRET_LENGTH = 32;
+const PLACEHOLDER_JWT_SECRETS = new Set([
+    'your_jwt_secret_key',
+    'your_jwt_secret_key_change_in_production',
+    'changeme',
+    'change_me',
+    'default',
+]);
+
+interface UserRuntimeConfig extends ConfigObject {
+    jwt?: YamlJwtConfig;
+}
+
 // 加载 Yaml 配置文件
 function loadYamlConfig(): YamlConfig {
     const env = process.env.NODE_ENV || 'development';
@@ -168,7 +183,114 @@ function readNumberEnv(name: string, defaultValue: number): number {
     return Number.isFinite(value) ? value : defaultValue;
 }
 
+function getUserConfigBaseDir(): string {
+    if (process.env.CONSTELLA_USER_CONFIG_DIR) {
+        return process.env.CONSTELLA_USER_CONFIG_DIR;
+    }
+
+    if (process.platform === 'win32') {
+        return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), 'Constella');
+    }
+
+    const xdgConfigHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
+    return path.join(xdgConfigHome, 'Constella');
+}
+
+function getUserConfigPath(): string {
+    return path.join(getUserConfigBaseDir(), 'config.local.yaml');
+}
+
+function isUnsafeJwtSecret(secret?: string): boolean {
+    if (!secret) return true;
+    const normalizedSecret = secret.trim();
+    if (!normalizedSecret) return true;
+    if (PLACEHOLDER_JWT_SECRETS.has(normalizedSecret)) return true;
+    return normalizedSecret.length < MIN_JWT_SECRET_LENGTH;
+}
+
+function loadUserRuntimeConfig(): UserRuntimeConfig {
+    const userConfigPath = getUserConfigPath();
+    if (!fs.existsSync(userConfigPath)) {
+        return {};
+    }
+
+    try {
+        const raw = fs.readFileSync(userConfigPath, 'utf8');
+        const parsed = yaml.load(raw);
+        if (typeof parsed === 'object' && parsed !== null) {
+            return parsed as UserRuntimeConfig;
+        }
+    } catch (error) {
+        console.error(`Failed to load user runtime config from ${userConfigPath}:`, error);
+    }
+
+    return {};
+}
+
+function saveUserRuntimeConfig(configToSave: UserRuntimeConfig): void {
+    const userConfigPath = getUserConfigPath();
+    const userConfigDir = path.dirname(userConfigPath);
+    fs.mkdirSync(userConfigDir, { recursive: true });
+
+    const dumped = yaml.dump(configToSave, {
+        noRefs: true,
+        lineWidth: 120,
+    });
+    fs.writeFileSync(userConfigPath, dumped, 'utf8');
+}
+
+function resolveJwtSecret(yamlSecret?: string): string {
+    const env = process.env.NODE_ENV || 'development';
+    const envSecret = process.env.JWT_SECRET;
+    if (!isUnsafeJwtSecret(envSecret)) {
+        return envSecret!.trim();
+    }
+    if (envSecret) {
+        console.warn('JWT_SECRET from env is unsafe or too short, ignoring it.');
+    }
+
+    if (!isUnsafeJwtSecret(yamlSecret)) {
+        return yamlSecret!.trim();
+    }
+    if (yamlSecret) {
+        console.warn('JWT secret from yaml is placeholder/unsafe, ignoring it.');
+    }
+
+    if (env === 'test') {
+        return 'test_jwt_secret_key_for_testing_only';
+    }
+
+    const userRuntimeConfig = loadUserRuntimeConfig();
+    const userSecret = userRuntimeConfig.jwt?.secret;
+    if (!isUnsafeJwtSecret(userSecret)) {
+        return userSecret!.trim();
+    }
+
+    const generatedSecret = randomBytes(48).toString('hex');
+
+    try {
+        saveUserRuntimeConfig({
+            ...userRuntimeConfig,
+            jwt: {
+                ...userRuntimeConfig.jwt,
+                secret: generatedSecret,
+            },
+        });
+        console.warn(`Generated JWT secret for local runtime config at ${getUserConfigPath()}.`);
+        return generatedSecret;
+    } catch (error) {
+        if (env === 'production') {
+            throw new Error(
+                `JWT secret is missing and auto-persist failed. Set JWT_SECRET or make ${getUserConfigPath()} writable.`
+            );
+        }
+        console.error('Failed to persist generated JWT secret, using in-memory secret for current process.', error);
+        return generatedSecret;
+    }
+}
+
 const yamlConfig = loadYamlConfig();
+const jwtSecret = resolveJwtSecret(yamlConfig.jwt?.secret);
 
 export const config = {
     // Application
@@ -185,10 +307,10 @@ export const config = {
 
     // JWT
     jwt: {
-        secret: yamlConfig.jwt?.secret || process.env.JWT_SECRET || 'your_jwt_secret_key',
-        expiresIn: yamlConfig.jwt?.expiresIn || process.env.JWT_EXPIRES_IN || '7d',
+        secret: jwtSecret,
+        expiresIn: process.env.JWT_EXPIRES_IN || yamlConfig.jwt?.expiresIn || '7d',
         refreshExpiresIn:
-            yamlConfig.jwt?.refreshExpiresIn || process.env.JWT_REFRESH_EXPIRES_IN || '30d',
+            process.env.JWT_REFRESH_EXPIRES_IN || yamlConfig.jwt?.refreshExpiresIn || '30d',
     },
 
     // Rate Limiting

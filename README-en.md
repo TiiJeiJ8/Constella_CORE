@@ -48,6 +48,29 @@ Server config is loaded in this order:
 2. `config/{NODE_ENV}.yaml` (if exists)
 3. environment variables override file values
 
+## JWT Secret (Packaged Distribution)
+
+To prevent token forgery risks, the server no longer uses any hardcoded fallback JWT secret.
+
+JWT secret resolution priority:
+
+1. `JWT_SECRET` environment variable
+2. `jwt.secret` in YAML config
+3. user local runtime config `config.local.yaml`
+4. if all above are missing or unsafe: generate a random secret on first run and persist it in user config
+
+Default write path on Windows:
+
+- `%APPDATA%/Roaming/Constella/config.local.yaml`
+
+You can override the local config directory via `CONSTELLA_USER_CONFIG_DIR`.
+
+Notes:
+
+- In production, if no valid secret is provided and local persistence fails, startup will fail fast.
+- Placeholder values like `your_jwt_secret_key` and `your_jwt_secret_key_change_in_production` are treated as unsafe and rejected.
+- Test environment (`NODE_ENV=test`) still allows the testing secret to keep automated tests stable.
+
 ## Quick Start
 
 ```bash
