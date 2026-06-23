@@ -44,6 +44,11 @@ interface CreateInviteCodeParams {
     role?: RoomRole;
 }
 
+interface GetActiveInviteCodeParams {
+    room_id: string;
+    requester_id: string;
+}
+
 interface JoinByInviteCodeParams {
     token: string;
     user_id: string;
@@ -883,6 +888,40 @@ export class RoomService {
         }
     }
 
+    async getActiveInviteCode(params: GetActiveInviteCodeParams) {
+        try {
+            const { room_id, requester_id } = params;
+
+            const requesterMember = await RoomMemberModel.findByRoomAndUser(room_id, requester_id);
+            if (!requesterMember) {
+                throw new AppError('Requester is not a member of this room', 403);
+            }
+
+            const requesterRole = this.normalizeRole(requesterMember.role);
+            if (requesterRole !== RoomRole.OWNER && requesterRole !== RoomRole.ADMIN) {
+                throw new AppError('Only owners and admins can view invite codes', 403);
+            }
+
+            const invite = await RoomInvitationModel.findLatestActiveCodeByRoom(room_id);
+            if (!invite) {
+                return {
+                    invite_code: '',
+                    role: null,
+                    expires_at: null,
+                };
+            }
+
+            return {
+                invite_code: invite.token,
+                role: this.normalizeRole(invite.role) || RoomRole.EDITOR,
+                expires_at: invite.expires_at,
+            };
+        } catch (error) {
+            logger.error('Error getting active invite code:', error);
+            throw error;
+        }
+    }
+
     async joinRoomByInviteCode(params: JoinByInviteCodeParams) {
         try {
             const { token, user_id } = params;
@@ -895,6 +934,8 @@ export class RoomService {
             if (!invitation) {
                 throw new AppError('Invite code is invalid', 404);
             }
+
+            const isRoomInviteCode = !invitation.invitee_email;
 
             if (invitation.accepted) {
                 throw new AppError('Invite code has already been used', 409);
@@ -932,7 +973,9 @@ export class RoomService {
                 role,
             });
 
-            await RoomInvitationModel.markAccepted(invitation.id);
+            if (!isRoomInviteCode) {
+                await RoomInvitationModel.markAccepted(invitation.id);
+            }
 
             await roomAuditService.record({
                 room_id: room.id,

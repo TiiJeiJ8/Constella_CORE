@@ -48,6 +48,7 @@ router.post('/:id/members/:memberId/transfer-ownership', authenticateToken, (req
 router.patch('/:id/settings', authenticateToken, (req, res, next) => roomController.updateRoomSettings(req, res, next));
 router.patch('/:id/password', authenticateToken, (req, res, next) => roomController.updateRoomPassword(req, res, next));
 router.post('/join-by-invite', authenticateToken, (req, res, next) => roomController.joinByInviteCode(req, res, next));
+router.get('/:id/invite-codes/active', authenticateToken, (req, res, next) => roomController.getActiveInviteCode(req, res, next));
 router.post('/:id/invite-codes', authenticateToken, (req, res, next) => roomController.createInviteCode(req, res, next));
 
 router.get('/:id', authenticateToken, (req, res, next) => roomController.getRoomById(req, res, next));

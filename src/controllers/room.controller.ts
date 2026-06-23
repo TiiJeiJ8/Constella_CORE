@@ -298,6 +298,33 @@ export class RoomController {
         }
     }
 
+    async getActiveInviteCode(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+
+            if (!id) {
+                res.status(400).json(errorResponse('Room ID is required', 400))
+                return
+            }
+
+            if (!requesterId) {
+                res.status(401).json(errorResponse('User authentication required', 401))
+                return
+            }
+
+            const result = await roomService.getActiveInviteCode({
+                room_id: id,
+                requester_id: requesterId,
+            })
+
+            res.status(200).json(successResponse(result, 'Invite code retrieved successfully'))
+        } catch (error) {
+            logger.error('Get active invite code error:', error)
+            next(error)
+        }
+    }
+
     async joinByInviteCode(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { token } = req.body

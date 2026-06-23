@@ -51,6 +51,24 @@ export class RoomInvitationModel {
         }
     }
 
+    static async findLatestActiveCodeByRoom(roomId: string): Promise<RoomInvitation | null> {
+        const query = 'SELECT * FROM room_invitations WHERE room_id = $1';
+
+        try {
+            const result = await db.query<RoomInvitation>(query, [roomId]);
+            const now = Date.now();
+
+            return result.rows
+                .filter(invite => !invite.accepted)
+                .filter(invite => !invite.invitee_email)
+                .filter(invite => new Date(invite.expires_at).getTime() > now)
+                .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0] || null;
+        } catch (error) {
+            logger.error('Error finding active room invite code:', error);
+            throw error;
+        }
+    }
+
     static async markAccepted(id: string): Promise<RoomInvitation | null> {
         const query = `
       UPDATE room_invitations
