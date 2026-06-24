@@ -79,6 +79,21 @@ CREATE TABLE IF NOT EXISTS room_documents (
     UNIQUE(room_id, doc_name)
 );
 
+CREATE TABLE IF NOT EXISTS room_todos (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    done BOOLEAN NOT NULL DEFAULT FALSE,
+    due_date TIMESTAMP,
+    assignee_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    assignee_name VARCHAR(255),
+    creator_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    creator_name VARCHAR(255),
+    is_public BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 -- ============================================
 -- 7. 创建房间邀请表（可选）
 -- ============================================
@@ -141,6 +156,9 @@ CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token ON refresh_tokens(token);
 -- 文档持久化表索引
 CREATE INDEX IF NOT EXISTS idx_room_documents_room_id ON room_documents(room_id);
 CREATE INDEX IF NOT EXISTS idx_room_documents_snapshot ON room_documents(is_snapshot, updated_at);
+CREATE INDEX IF NOT EXISTS idx_room_todos_room_id ON room_todos(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_todos_creator_id ON room_todos(creator_id);
+CREATE INDEX IF NOT EXISTS idx_room_todos_assignee_id ON room_todos(assignee_id);
 
 -- 房间邀请表索引
 CREATE INDEX IF NOT EXISTS idx_room_invitations_room_id ON room_invitations(room_id);

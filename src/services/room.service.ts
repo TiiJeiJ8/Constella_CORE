@@ -14,6 +14,7 @@ import { getYjsWebSocketServer } from '../yjs';
 import { RoomAuditLogModel } from '../models/roomAuditLog.model';
 import { roomAuditService } from './roomAudit.service';
 import { RoomInvitationModel } from '../models/roomInvitation.model';
+import { RoomTodoModel } from '../models/roomTodo.model';
 
 interface CreateRoomParams {
     name: string;
@@ -1424,6 +1425,115 @@ export class RoomService {
             logger.error('Error generating relay token:', error);
             throw error;
         }
+    }
+
+    async getRoomTodos(roomId: string, requesterId: string) {
+        const role = await this.getUserRole(roomId, requesterId);
+        if (!this.buildCapabilities(role).can_view) {
+            throw new AppError('User is not a member of this room', 403);
+        }
+
+        return RoomTodoModel.findVisibleByRoom(roomId, requesterId);
+    }
+
+    async createRoomTodo(params: {
+        roomId: string;
+        requesterId: string;
+        text: string;
+        dueDate?: string | null;
+        assigneeId?: string | null;
+        assigneeName?: string | null;
+        creatorName?: string | null;
+        isPublic?: boolean;
+    }) {
+        const role = await this.getUserRole(params.roomId, params.requesterId);
+        if (!this.buildCapabilities(role).can_edit) {
+            throw new AppError('User cannot create todos in this room', 403);
+        }
+
+        const text = params.text.trim();
+        if (!text) {
+            throw new AppError('Todo text is required', 400);
+        }
+
+        if (params.assigneeId) {
+            const assignee = await RoomMemberModel.findByRoomAndUser(params.roomId, params.assigneeId);
+            if (!assignee) {
+                throw new AppError('Assignee is not a room member', 400);
+            }
+        }
+
+        return RoomTodoModel.create({
+            room_id: params.roomId,
+            text,
+            due_date: params.dueDate || null,
+            assignee_id: params.assigneeId || null,
+            assignee_name: params.assigneeName || null,
+            creator_id: params.requesterId,
+            creator_name: params.creatorName || null,
+            is_public: Boolean(params.isPublic),
+        });
+    }
+
+    async updateRoomTodo(params: {
+        roomId: string;
+        todoId: string;
+        requesterId: string;
+        text?: string;
+        done?: boolean;
+        dueDate?: string | null;
+        assigneeId?: string | null;
+        assigneeName?: string | null;
+        isPublic?: boolean;
+    }) {
+        const todo = await RoomTodoModel.findById(params.todoId);
+        if (!todo || todo.room_id !== params.roomId) {
+            throw new AppError('Todo not found', 404);
+        }
+
+        const role = await this.getUserRole(params.roomId, params.requesterId);
+        const canEditRoom = this.buildCapabilities(role).can_edit;
+        const canOperateTodo = todo.creator_id === params.requesterId || todo.assignee_id === params.requesterId;
+        if (!canEditRoom && !canOperateTodo) {
+            throw new AppError('User cannot update this todo', 403);
+        }
+
+        if (params.assigneeId) {
+            const assignee = await RoomMemberModel.findByRoomAndUser(params.roomId, params.assigneeId);
+            if (!assignee) {
+                throw new AppError('Assignee is not a room member', 400);
+            }
+        }
+
+        const nextText = params.text === undefined ? undefined : params.text.trim();
+        if (params.text !== undefined && !nextText) {
+            throw new AppError('Todo text is required', 400);
+        }
+
+        return RoomTodoModel.update(params.todoId, {
+            text: nextText,
+            done: params.done,
+            due_date: params.dueDate,
+            assignee_id: params.assigneeId,
+            assignee_name: params.assigneeName,
+            is_public: params.isPublic,
+        });
+    }
+
+    async deleteRoomTodo(roomId: string, todoId: string, requesterId: string) {
+        const todo = await RoomTodoModel.findById(todoId);
+        if (!todo || todo.room_id !== roomId) {
+            throw new AppError('Todo not found', 404);
+        }
+
+        const role = await this.getUserRole(roomId, requesterId);
+        const canEditRoom = this.buildCapabilities(role).can_edit;
+        const canOperateTodo = todo.creator_id === requesterId || todo.assignee_id === requesterId;
+        if (!canEditRoom && !canOperateTodo) {
+            throw new AppError('User cannot delete this todo', 403);
+        }
+
+        return { success: await RoomTodoModel.delete(todoId) };
     }
 }
 

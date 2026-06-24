@@ -57,6 +57,7 @@ class MemoryStore {
         this.tables.set('room_members', new Map());
         this.tables.set('refresh_tokens', new Map());
         this.tables.set('room_documents', new Map());
+        this.tables.set('room_todos', new Map());
         this.tables.set('room_invitations', new Map());
         this.tables.set('room_join_requests', new Map());
         this.tables.set('room_audit_logs', new Map());
@@ -489,6 +490,24 @@ class SQLiteStore {
                     updated_at TEXT NOT NULL,
                     FOREIGN KEY (room_id) REFERENCES rooms(id),
                     UNIQUE(room_id, doc_name)
+                );
+
+                CREATE TABLE IF NOT EXISTS room_todos (
+                    id TEXT PRIMARY KEY,
+                    room_id TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    done BOOLEAN DEFAULT 0,
+                    due_date TEXT,
+                    assignee_id TEXT,
+                    assignee_name TEXT,
+                    creator_id TEXT NOT NULL,
+                    creator_name TEXT,
+                    is_public BOOLEAN DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY (room_id) REFERENCES rooms(id),
+                    FOREIGN KEY (assignee_id) REFERENCES users(id),
+                    FOREIGN KEY (creator_id) REFERENCES users(id)
                 );
 
                 CREATE TABLE IF NOT EXISTS room_audit_logs (

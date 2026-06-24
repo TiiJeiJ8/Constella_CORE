@@ -159,6 +159,41 @@ export interface CreateRoomMemberParams {
     role?: RoomRole;
 }
 
+export interface RoomTodo {
+    id: string;
+    room_id: string;
+    text: string;
+    done: boolean;
+    due_date?: Date | string | null;
+    assignee_id?: string | null;
+    assignee_name?: string | null;
+    creator_id: string;
+    creator_name?: string | null;
+    is_public: boolean;
+    created_at: Date | string;
+    updated_at: Date | string;
+}
+
+export interface CreateRoomTodoParams {
+    room_id: string;
+    text: string;
+    due_date?: string | null;
+    assignee_id?: string | null;
+    assignee_name?: string | null;
+    creator_id: string;
+    creator_name?: string | null;
+    is_public?: boolean;
+}
+
+export interface UpdateRoomTodoParams {
+    text?: string;
+    done?: boolean;
+    due_date?: string | null;
+    assignee_id?: string | null;
+    assignee_name?: string | null;
+    is_public?: boolean;
+}
+
 // 刷新令牌表
 export interface RefreshToken {
     id: string;

@@ -131,6 +131,99 @@ export class RoomController {
         }
     }
 
+    async getRoomTodos(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+
+            if (!id || !requesterId) {
+                res.status(!id ? 400 : 401).json(errorResponse(!id ? 'Room ID is required' : 'User authentication required', !id ? 400 : 401))
+                return
+            }
+
+            const result = await roomService.getRoomTodos(id, requesterId)
+            res.status(200).json(successResponse(result, 'Room todos retrieved successfully'))
+        } catch (error) {
+            logger.error('Get room todos error:', error)
+            next(error)
+        }
+    }
+
+    async createRoomTodo(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id } = req.params
+            const requesterId = req.user?.userId
+            const { text, dueDate, assigneeId, assigneeName, creatorName, isPublic } = req.body
+
+            if (!id || !requesterId) {
+                res.status(!id ? 400 : 401).json(errorResponse(!id ? 'Room ID is required' : 'User authentication required', !id ? 400 : 401))
+                return
+            }
+
+            const result = await roomService.createRoomTodo({
+                roomId: id,
+                requesterId,
+                text,
+                dueDate,
+                assigneeId,
+                assigneeName,
+                creatorName,
+                isPublic,
+            })
+            res.status(201).json(successResponse(result, 'Room todo created successfully'))
+        } catch (error) {
+            logger.error('Create room todo error:', error)
+            next(error)
+        }
+    }
+
+    async updateRoomTodo(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id, todoId } = req.params
+            const requesterId = req.user?.userId
+            const { text, done, dueDate, assigneeId, assigneeName, isPublic } = req.body
+
+            if (!id || !todoId || !requesterId) {
+                res.status(!requesterId ? 401 : 400).json(errorResponse(!requesterId ? 'User authentication required' : 'Room ID and todo ID are required', !requesterId ? 401 : 400))
+                return
+            }
+
+            const result = await roomService.updateRoomTodo({
+                roomId: id,
+                todoId,
+                requesterId,
+                text,
+                done,
+                dueDate,
+                assigneeId,
+                assigneeName,
+                isPublic,
+            })
+            res.status(200).json(successResponse(result, 'Room todo updated successfully'))
+        } catch (error) {
+            logger.error('Update room todo error:', error)
+            next(error)
+        }
+    }
+
+    async deleteRoomTodo(req: Request, res: Response, next: NextFunction): Promise<void> {
+        try {
+            const { id, todoId } = req.params
+            const requesterId = req.user?.userId
+
+            if (!id || !todoId || !requesterId) {
+                res.status(!requesterId ? 401 : 400).json(errorResponse(!requesterId ? 'User authentication required' : 'Room ID and todo ID are required', !requesterId ? 401 : 400))
+                return
+            }
+
+            const result = await roomService.deleteRoomTodo(id, todoId, requesterId)
+            res.status(200).json(successResponse(result, 'Room todo deleted successfully'))
+        } catch (error) {
+            logger.error('Delete room todo error:', error)
+            next(error)
+        }
+    }
+
     async updateRoomSettings(req: Request, res: Response, next: NextFunction): Promise<void> {
         try {
             const { id } = req.params
